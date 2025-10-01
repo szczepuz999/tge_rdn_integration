@@ -22,10 +22,15 @@
     "step": {
       "init": {
         "title": "Opcje TGE RDN",
-        "description": "Skonfiguruj opcje wyświetlania cen",
+        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\nWzór obliczania: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
         "data": {
           "unit": "Jednostka ceny",
-          "template": "Template Jinja2 (opcjonalny)"
+          "template": "Template Jinja2 (opcjonalny)",
+          "exchange_fee_pln_mwh": "Opłata giełdowa [PLN/MWh]",
+          "vat_rate": "Stawka VAT (np. 0.23 dla 23%)",
+          "distribution_low_pln_mwh": "Dystrybucja - pozostałe godziny [PLN/MWh]",
+          "distribution_mid_pln_mwh": "Dystrybucja - szczyt przedpołudniowy [PLN/MWh]",
+          "distribution_high_pln_mwh": "Dystrybucja - szczyt popołudniowy [PLN/MWh]"
         }
       }
     }

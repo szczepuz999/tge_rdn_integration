@@ -20,6 +20,16 @@ from .const import (
     CONF_TEMPLATE,
     DEFAULT_UNIT,
     DEFAULT_TEMPLATE,
+    CONF_EXCHANGE_FEE,
+    CONF_VAT_RATE,
+    CONF_DIST_LOW,
+    CONF_DIST_MED,
+    CONF_DIST_HIGH,
+    DEFAULT_EXCHANGE_FEE,
+    DEFAULT_VAT_RATE,
+    DEFAULT_DIST_LOW,
+    DEFAULT_DIST_MED,
+    DEFAULT_DIST_HIGH,
     REQUIRED_LIBRARIES,
 )
 
@@ -109,6 +119,26 @@ class TGERDNOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_TEMPLATE,
                     default=self.config_entry.options.get(CONF_TEMPLATE, DEFAULT_TEMPLATE)
                 ): str,
+                vol.Optional(
+                    CONF_EXCHANGE_FEE,
+                    default=self.config_entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_VAT_RATE,
+                    default=self.config_entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_DIST_LOW,
+                    default=self.config_entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_DIST_MED,
+                    default=self.config_entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_DIST_HIGH,
+                    default=self.config_entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
+                ): vol.Coerce(float),
             }),
         )
 

@@ -43,6 +43,16 @@ from .const import (
     DEFAULT_TEMPLATE,
     UPDATE_INTERVAL_CURRENT,
     UPDATE_INTERVAL_NEXT_DAY,
+    CONF_EXCHANGE_FEE,
+    CONF_VAT_RATE,
+    CONF_DIST_LOW,
+    CONF_DIST_MED,
+    CONF_DIST_HIGH,
+    DEFAULT_EXCHANGE_FEE,
+    DEFAULT_VAT_RATE,
+    DEFAULT_DIST_LOW,
+    DEFAULT_DIST_MED,
+    DEFAULT_DIST_HIGH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -247,6 +257,13 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._unit = entry.options.get(CONF_UNIT, DEFAULT_UNIT)
         self._template_str = entry.options.get(CONF_TEMPLATE, DEFAULT_TEMPLATE)
 
+        # Fees/tariffs and VAT (PLN/MWh)
+        self._exchange_fee = entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
+        self._vat_rate = entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
+        self._dist_low = entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
+        self._dist_med = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
+        self._dist_high = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
+
         if self._template_str != DEFAULT_TEMPLATE:
             self._template = Template(self._template_str, self.hass)
         else:
@@ -261,6 +278,65 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
     def native_unit_of_measurement(self) -> str:
         """Return the unit of measurement."""
         return self._unit
+
+    def _get_distribution_rate(self, when) -> float:
+        """Return distribution rate [PLN/MWh] based on local time and season."""
+        try:
+            local = when.astimezone() if hasattr(when, 'astimezone') else when
+        except Exception:
+            local = when
+
+        month = local.month
+        hour = local.hour  # 0-23
+
+        # Określ sezon: lato (kwiecień-wrzesień) vs zima (październik-marzec)
+        is_summer = month in (4, 5, 6, 7, 8, 9)
+
+        # Mapuj godziny na pasma taryfowe
+        if is_summer:
+            # Lato: szczyt przedpołudniowy (7-13), szczyt popołudniowy (19-22), pozostałe (13-19 i 22-7)
+            if 7 <= hour < 13:
+                return self._dist_med  # szczyt przedpołudniowy
+            elif 19 <= hour < 22:
+                return self._dist_high  # szczyt popołudniowy
+            else:
+                return self._dist_low  # pozostałe godziny
+        else:
+            # Zima: szczyt przedpołudniowy (7-13), szczyt popołudniowy (16-21), pozostałe (13-16 i 21-7)
+            if 7 <= hour < 13:
+                return self._dist_med  # szczyt przedpołudniowy
+            elif 16 <= hour < 21:
+                return self._dist_high  # szczyt popołudniowy
+            else:
+                return self._dist_low  # pozostałe godziny
+
+    def _compute_total_price(self, base_pln_mwh: float, when) -> float:
+        """
+        Compute total price using formula: 
+        total_gross = (cena_TGE × (1 + VAT)) + exchange_fee + distribution_rate
+        """
+        dist_rate = self._get_distribution_rate(when)
+
+        # VAT naliczany tylko od ceny TGE
+        tge_with_vat = float(base_pln_mwh) * (1.0 + float(self._vat_rate))
+
+        # Opłaty dodawane bez VAT
+        total_gross = tge_with_vat + float(self._exchange_fee) + float(dist_rate)
+
+        return total_gross
+
+    def _convert_units(self, value: float) -> float:
+        """Convert price units."""
+        # Wartość wejściowa już w PLN/MWh brutto
+        if self._unit == UNIT_PLN_KWH:
+            return value / 1000  # MWh na kWh
+        elif self._unit == UNIT_EUR_MWH:
+            # Kurs EUR/PLN - dla uproszczenia używam 4.3
+            return value / 4.3
+        elif self._unit == UNIT_EUR_KWH:
+            return value / 4.3 / 1000
+
+        return value  # PLN/MWh - domyślnie
 
     @property
     def state(self) -> Optional[float]:
@@ -277,19 +353,16 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             if value is None:
                 return None
 
-            # Konwersja jednostek
-            converted_value = self._convert_units(value)
-
             # Zastosuj template jeśli jest ustawiony
             if self._template:
                 try:
-                    result = self._template.async_render(value=converted_value)
+                    result = self._template.async_render(value=value)
                     return float(result)
                 except Exception as err:
                     _LOGGER.error(f"Error applying template: {err}")
-                    return converted_value
+                    return value
 
-            return converted_value
+            return value
 
         except Exception as err:
             _LOGGER.error(f"Error calculating sensor value: {err}")
@@ -301,18 +374,18 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         now = datetime.now()
 
         if self._sensor_type == "current_price":
-            return self._get_current_price(data, now)
+            return self._get_total_current_price(data, now)
 
         elif self._sensor_type == "next_hour_price":
-            return self._get_next_hour_price(data, now)
+            return self._get_total_next_hour_price(data, now)
 
         elif self._sensor_type == "daily_average":
-            return self._get_daily_average(data, now)
+            return self._get_total_daily_average(data, now)
 
         return None
 
-    def _get_current_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get current hour price."""
+    def _get_total_current_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
+        """Get current hour price with all fees and VAT."""
         today_data = data.get("today")
         if not today_data or not today_data.get("hourly_data"):
             return None
@@ -321,12 +394,13 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         for item in today_data["hourly_data"]:
             if item["hour"] == current_hour:
-                return item["price"]
+                total_pln_mwh = self._compute_total_price(item["price"], now)
+                return self._convert_units(total_pln_mwh)
 
         return None
 
-    def _get_next_hour_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get next hour price."""
+    def _get_total_next_hour_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
+        """Get next hour price with all fees and VAT."""
         next_hour = now.hour + 2  # Następna godzina w systemie TGE
 
         # Jeśli następna godzina to jutro
@@ -335,40 +409,48 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             if not tomorrow_data or not tomorrow_data.get("hourly_data"):
                 return None
 
+            next_day_time = now + timedelta(hours=1)
             for item in tomorrow_data["hourly_data"]:
                 if item["hour"] == next_hour - 24:
-                    return item["price"]
+                    total_pln_mwh = self._compute_total_price(item["price"], next_day_time)
+                    return self._convert_units(total_pln_mwh)
         else:
             today_data = data.get("today")
             if not today_data or not today_data.get("hourly_data"):
                 return None
 
+            next_hour_time = now + timedelta(hours=1)
             for item in today_data["hourly_data"]:
                 if item["hour"] == next_hour:
-                    return item["price"]
+                    total_pln_mwh = self._compute_total_price(item["price"], next_hour_time)
+                    return self._convert_units(total_pln_mwh)
 
         return None
 
-    def _get_daily_average(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get daily average price."""
+    def _get_total_daily_average(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
+        """Get daily average price with all fees and VAT."""
         today_data = data.get("today")
         if not today_data:
             return None
 
-        return today_data.get("average_price")
+        # Oblicz średnią z cen brutto dla wszystkich godzin
+        total_prices = []
+        for item in today_data.get('hourly_data', []):
+            # Konstrukcja datetime dla konkretnej godziny
+            hour_dt = now.replace(
+                hour=(item['hour']-1) % 24, 
+                minute=0, 
+                second=0, 
+                microsecond=0
+            )
+            total_price = self._compute_total_price(item['price'], hour_dt)
+            total_prices.append(total_price)
 
-    def _convert_units(self, value: float) -> float:
-        """Convert price units."""
-        # Domyślnie dane są w PLN/MWh
-        if self._unit == UNIT_PLN_KWH:
-            return value / 1000  # MWh na kWh
-        elif self._unit == UNIT_EUR_MWH:
-            # Tutaj powinien być kurs EUR/PLN - dla uproszczenia używam 4.3
-            return value / 4.3
-        elif self._unit == UNIT_EUR_KWH:
-            return value / 4.3 / 1000
+        if not total_prices:
+            return None
 
-        return value  # PLN/MWh - domyślnie
+        average_total = sum(total_prices) / len(total_prices)
+        return self._convert_units(average_total)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -379,15 +461,45 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return {}
 
+        # Obliczenia dla bieżącej godziny
+        now = datetime.now()
+        base_price = None
+        today_data = self.coordinator.data.get("today")
+
+        if today_data and today_data.get("hourly_data"):
+            current_hour = now.hour + 1
+            for item in today_data["hourly_data"]:
+                if item["hour"] == current_hour:
+                    base_price = item["price"]
+                    break
+
+        dist_rate = self._get_distribution_rate(now)
+
+        # Oblicz komponenty ceny
+        if base_price is not None:
+            tge_with_vat = base_price * (1.0 + self._vat_rate)
+            total_gross = tge_with_vat + self._exchange_fee + dist_rate
+        else:
+            tge_with_vat = None
+            total_gross = None
+
         data = self.coordinator.data
-        today_data = data.get("today")
         tomorrow_data = data.get("tomorrow")
 
         attributes = {
             "last_update": data.get("last_update"),
             "unit_raw": UNIT_PLN_MWH,
             "unit_converted": self._unit,
-            "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing"
+            "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
+            "pricing_formula": "(TGE_price × (1 + VAT)) + exchange_fee + distribution_rate",
+            "components": {
+                "base_energy_pln_mwh": base_price,
+                "tge_with_vat_pln_mwh": tge_with_vat,
+                "exchange_fee_pln_mwh": self._exchange_fee,
+                "distribution_pln_mwh": dist_rate,
+                "vat_rate": self._vat_rate,
+                "total_gross_pln_mwh": total_gross
+            }
         }
 
         if today_data:

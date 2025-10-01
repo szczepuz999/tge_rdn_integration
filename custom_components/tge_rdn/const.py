@@ -24,6 +24,19 @@ CONF_TEMPLATE = "template"
 DEFAULT_UNIT = UNIT_PLN_MWH
 DEFAULT_TEMPLATE = "{{ value }}"
 
+# Ceny i podatki
+CONF_EXCHANGE_FEE = "exchange_fee_pln_mwh"  # opłata giełdowa [PLN/MWh]
+CONF_VAT_RATE = "vat_rate"                  # np. 0.23 dla 23%
+CONF_DIST_LOW = "distribution_low_pln_mwh"   # stawka pozostałe godziny [PLN/MWh]
+CONF_DIST_MED = "distribution_mid_pln_mwh"   # szczyt przedpołudniowy [PLN/MWh]
+CONF_DIST_HIGH = "distribution_high_pln_mwh" # szczyt popołudniowy [PLN/MWh]
+
+DEFAULT_EXCHANGE_FEE = 0.0
+DEFAULT_VAT_RATE = 0.23
+DEFAULT_DIST_LOW = 0.0
+DEFAULT_DIST_MED = 0.0
+DEFAULT_DIST_HIGH = 0.0
+
 # Wymagane biblioteki
 REQUIRED_LIBRARIES = [
     "pandas>=1.5.0",

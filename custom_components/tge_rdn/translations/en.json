@@ -1,0 +1,38 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "TGE RDN - Configuration",
+        "description": "Configure TGE RDN integration to fetch electricity prices.\\n\\nRequired libraries: {required_libraries}",
+        "data": {
+          "name": "Integration name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to TGE server",
+      "missing_libraries": "Missing required Python libraries. Home Assistant will attempt to install them automatically. Please wait and restart Home Assistant.",
+      "unknown": "Unknown error"
+    },
+    "abort": {
+      "already_configured": "Integration is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "TGE RDN Options",
+        "description": "Configure price display options and additional fees.\\n\\nCalculation formula: (TGE_price × (1 + VAT)) + exchange_fee + distribution",
+        "data": {
+          "unit": "Price unit",
+          "template": "Jinja2 template (optional)",
+          "exchange_fee_pln_mwh": "Exchange fee [PLN/MWh]",
+          "vat_rate": "VAT rate (e.g. 0.23 for 23%)",
+          "distribution_low_pln_mwh": "Distribution - off-peak hours [PLN/MWh]",
+          "distribution_mid_pln_mwh": "Distribution - morning peak [PLN/MWh]",
+          "distribution_high_pln_mwh": "Distribution - evening peak [PLN/MWh]"
+        }
+      }
+    }
+  }
+}
