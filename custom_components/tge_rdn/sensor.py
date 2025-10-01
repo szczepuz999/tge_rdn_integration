@@ -503,21 +503,78 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         }
 
         if today_data:
+            # Oblicz ceny brutto dla wszystkich godzin dzisiaj
+            prices_today_gross = []
+            for item in today_data.get("hourly_data", []):
+                # Konstrukcja datetime dla godziny
+                hour_dt = now.replace(
+                    hour=(item['hour']-1) % 24, 
+                    minute=0, 
+                    second=0, 
+                    microsecond=0
+                )
+                gross_price_pln_mwh = self._compute_total_price(item['price'], hour_dt)
+                gross_price_converted = self._convert_units(gross_price_pln_mwh)
+
+                prices_today_gross.append({
+                    'time': item['time'],
+                    'hour': item['hour'],
+                    'price_tge_net': item['price'],
+                    'price_gross': gross_price_converted,
+                    'price_gross_pln_mwh': gross_price_pln_mwh
+                })
+
+            # Oblicz statystyki brutto dla dzisiaj
+            gross_prices = [p['price_gross'] for p in prices_today_gross]
+
             attributes.update({
                 "today_average": today_data.get("average_price"),
                 "today_min": today_data.get("min_price"),
                 "today_max": today_data.get("max_price"),
                 "today_hours": today_data.get("total_hours"),
-                "prices_today": today_data.get("hourly_data", [])
+                "prices_today": today_data.get("hourly_data", []),  # Oryginalne ceny TGE
+                "prices_today_gross": prices_today_gross,  # Ceny brutto z VAT i dystrybucją
+                "today_average_gross": sum(gross_prices) / len(gross_prices) if gross_prices else None,
+                "today_min_gross": min(gross_prices) if gross_prices else None,
+                "today_max_gross": max(gross_prices) if gross_prices else None,
             })
 
         if tomorrow_data:
+            # Oblicz ceny brutto dla wszystkich godzin jutro
+            prices_tomorrow_gross = []
+            tomorrow_date = now + timedelta(days=1)
+            for item in tomorrow_data.get("hourly_data", []):
+                # Konstrukcja datetime dla jutrzejszej godziny
+                hour_dt = tomorrow_date.replace(
+                    hour=(item['hour']-1) % 24, 
+                    minute=0, 
+                    second=0, 
+                    microsecond=0
+                )
+                gross_price_pln_mwh = self._compute_total_price(item['price'], hour_dt)
+                gross_price_converted = self._convert_units(gross_price_pln_mwh)
+
+                prices_tomorrow_gross.append({
+                    'time': item['time'],
+                    'hour': item['hour'],
+                    'price_tge_net': item['price'],
+                    'price_gross': gross_price_converted,
+                    'price_gross_pln_mwh': gross_price_pln_mwh
+                })
+
+            # Oblicz statystyki brutto dla jutra
+            gross_prices_tomorrow = [p['price_gross'] for p in prices_tomorrow_gross]
+
             attributes.update({
                 "tomorrow_average": tomorrow_data.get("average_price"),
                 "tomorrow_min": tomorrow_data.get("min_price"),
                 "tomorrow_max": tomorrow_data.get("max_price"),
                 "tomorrow_hours": tomorrow_data.get("total_hours"),
-                "prices_tomorrow": tomorrow_data.get("hourly_data", [])
+                "prices_tomorrow": tomorrow_data.get("hourly_data", []),  # Oryginalne ceny TGE
+                "prices_tomorrow_gross": prices_tomorrow_gross,  # Ceny brutto z VAT i dystrybucją
+                "tomorrow_average_gross": sum(gross_prices_tomorrow) / len(gross_prices_tomorrow) if gross_prices_tomorrow else None,
+                "tomorrow_min_gross": min(gross_prices_tomorrow) if gross_prices_tomorrow else None,
+                "tomorrow_max_gross": max(gross_prices_tomorrow) if gross_prices_tomorrow else None,
             })
 
         return attributes

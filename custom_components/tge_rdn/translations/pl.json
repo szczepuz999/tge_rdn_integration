@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "Opcje TGE RDN",
-        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\nWzór obliczania: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
+        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja\\n\\nCeny w atrybutach zawierają pełne naliczenia.",
         "data": {
           "unit": "Jednostka ceny",
           "template": "Template Jinja2 (opcjonalny)",

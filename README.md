@@ -1,121 +1,114 @@
 # TGE RDN Integration for Home Assistant
 
-Integracja Home Assistant do pobierania cen energii elektrycznej z Rynku Dnia Następnego (RDN) Towarowej Giełdy Energii (TGE).
+Integracja Home Assistant do pobierania cen energii elektrycznej z Rynku Dnia Następnego (RDN) TGE z pełnym naliczaniem VAT, opłat giełdowych i dystrybucyjnych.
 
-## Funkcjonalności
+## 🧮 Wzór obliczania ceny końcowej
 
-- **Automatyczne pobieranie**: Pobiera ceny o 00:10 na bieżący dzień oraz o 15:00 na następny dzień
-- **Sensory godzinowe**: Aktualna cena, cena następnej godziny, średnia dzienna
-- **Różne jednostki**: PLN/MWh, PLN/kWh, EUR/MWh, EUR/kWh
-- **Szablony Jinja2**: Możliwość dostosowania wartości przez szablony
-- **Atrybuty rozszerzone**: Pełne dane godzinowe, minimum, maksimum, średnie
+```
+total_gross = (cena_TGE × (1 + VAT)) + exchange_fee + distribution_rate
+```
 
-## Instalacja
+**VAT naliczany jest tylko od ceny TGE**, a opłaty giełdowe i dystrybucyjne dodawane są bez VAT.
 
-### Poprzez HACS (zalecane)
+## 📊 Ceny brutto w atrybutach
 
-1. Otwórz HACS w Home Assistant
-2. Przejdź do "Integracje" 
-3. Kliknij menu (...) i wybierz "Custom repositories"
-4. Dodaj URL repozytorium i wybierz kategorię "Integration"
-5. Zainstaluj integrację TGE RDN
-6. Restartuj Home Assistant
+**NOWOŚĆ:** Wszystkie ceny w atrybutach są teraz obliczone z pełnym naliczaniem VAT, opłat i dystrybucji!
 
-### Instalacja ręczna
+### Dostępne atrybuty:
 
-1. Pobierz pliki integracji
-2. Skopiuj folder `tge_rdn` do `config/custom_components/`
-3. Restartuj Home Assistant
+#### Ceny oryginalne (TGE netto):
+- `prices_today` - bazowe ceny TGE na dziś
+- `prices_tomorrow` - bazowe ceny TGE na jutro
+- `today_average/min/max` - statystyki TGE
 
-## Konfiguracja
+#### Ceny brutto (z VAT + opłaty):
+- `prices_today_gross` - kompletne ceny brutto na dziś
+- `prices_tomorrow_gross` - kompletne ceny brutto na jutro  
+- `today_average_gross/min_gross/max_gross` - statystyki brutto
+- `tomorrow_average_gross/min_gross/max_gross` - statystyki brutto
 
-1. Przejdź do **Konfiguracja** > **Integracje**
-2. Kliknij **Dodaj integrację**
-3. Wyszukaj **TGE RDN**
-4. Skonfiguruj nazwę integracji
-5. Opcjonalnie skonfiguruj jednostki i szablony w opcjach
+### Struktura ceny brutto:
 
-## Sensory
+```yaml
+prices_today_gross: [
+  {
+    "time": "2025-10-01T19:00:00",
+    "hour": 20,
+    "price_tge_net": 450.0,           # Oryginalna cena TGE
+    "price_gross": 0.706,             # Cena brutto w wybranej jednostce
+    "price_gross_pln_mwh": 705.5      # Cena brutto w PLN/MWh
+  }
+]
+```
 
-Integracja tworzy następujące sensory:
+## ⚡ Strefy taryfowe dystrybucji
 
-- `sensor.tge_rdn_current_price` - Aktualna cena energii
-- `sensor.tge_rdn_next_hour_price` - Cena w następnej godzinie  
-- `sensor.tge_rdn_daily_average` - Średnia cena dzienna
+### Okres letni (kwiecień-wrzesień):
+- **07:00–13:00**: Szczyt przedpołudniowy
+- **19:00–22:00**: Szczyt popołudniowy
+- **13:00–19:00 i 22:00–07:00**: Pozostałe godziny
 
-## Atrybuty
+### Okres zimowy (październik-marzec):
+- **07:00–13:00**: Szczyt przedpołudniowy  
+- **16:00–21:00**: Szczyt popołudniowy
+- **13:00–16:00 i 21:00–07:00**: Pozostałe godziny
 
-Każdy sensor zawiera dodatkowe atrybuty:
+## 🔧 Konfiguracja
 
-- `prices_today` - Wszystkie ceny godzinowe na dziś
-- `prices_tomorrow` - Wszystkie ceny godzinowe na jutro (jeśli dostępne)
-- `today_average/min/max` - Statystyki dzisiejsze
-- `tomorrow_average/min/max` - Statystyki jutra
-- `last_update` - Czas ostatniej aktualizacji
+W opcjach integracji ustaw:
+- **Opłata giełdowa [PLN/MWh]**: np. 2.0
+- **Stawka VAT**: np. 0.23 (23%)
+- **3 stawki dystrybucji**: pozostałe/przedpołudnie/popołudnie [PLN/MWh]
 
-## Przykład użycia z ApexCharts
+## 📈 Przykład karty ApexCharts z cenami brutto
 
 ```yaml
 type: custom:apexcharts-card
 graph_span: 24h
-span:
-  start: day
 header:
-  show: true
-  title: TGE RDN - Ceny energii dzisiaj
-  colorize_states: true
-now:
-  show: true
-  label: Teraz
+  title: "TGE RDN - Ceny energii brutto"
 series:
   - entity: sensor.tge_rdn_current_price
+    name: "Cena brutto"
     type: column
-    name: Cena energii
     data_generator: |
-      return entity.attributes.prices_today.map((item) => {
-        return [new Date(item.time).getTime(), item.price];
+      return entity.attributes.prices_today_gross.map((item) => {
+        return [new Date(item.time).getTime(), item.price_gross];
       });
 ```
 
-## Konfiguracja jednostek
+## 🚀 Instalacja
 
-Dostępne jednostki:
-- `PLN/MWh` (domyślnie)
-- `PLN/kWh` 
-- `EUR/MWh`
-- `EUR/kWh`
+1. Skopiuj `custom_components/tge_rdn` do `/config/custom_components/`
+2. Restart Home Assistant (automatyczna instalacja bibliotek)
+3. Dodaj integrację: Konfiguracja → Integracje → + → "TGE RDN"
+4. Skonfiguruj stawki w Opcjach
 
-## Szablony Jinja2
+## 📊 Sensory
 
-Przykład szablonu do zaokrąglenia:
+- `sensor.tge_rdn_current_price` - Cena brutto bieżąca
+- `sensor.tge_rdn_next_hour_price` - Cena brutto następnej godziny
+- `sensor.tge_rdn_daily_average` - Średnia cena brutto dzienna
+
+## 🔍 Rozbicie kosztów
+
+Każdy sensor zawiera szczegółowy rozkład w `components`:
+
+```yaml
+components:
+  base_energy_pln_mwh: 450.0           # TGE netto
+  tge_with_vat_pln_mwh: 553.5          # TGE + VAT
+  exchange_fee_pln_mwh: 2.0            # Opłata giełdowa
+  distribution_pln_mwh: 150.0          # Dystrybucja
+  vat_rate: 0.23                       # VAT 23%
+  total_gross_pln_mwh: 705.5           # Cena końcowa
 ```
-{{ (value | float) | round(2) }}
-```
 
-Przykład szablonu z marżą:
-```
-{{ (value | float * 1.23) | round(2) }}
-```
+## 💡 Korzyści nowego wzoru
 
-## Harmonogram aktualizacji
+- VAT tylko od energii TGE (~5% taniej niż poprzedni wzór)
+- Ceny brutto w atrybutach gotowe do wykresów
+- Pełna transparentność kosztów
+- Automatyczne przełączanie stref taryfowych
 
-- **00:10** - Pobieranie cen na bieżący dzień
-- **15:00** - Pobieranie cen na następny dzień
-- W innych godzinach sprawdzanie co godzinę
-
-## Wymagania
-
-- Home Assistant 2023.1+
-- Python 3.9+
-- Biblioteki: pandas, requests, openpyxl
-
-## Wsparcie
-
-W przypadku problemów:
-1. Sprawdź logi Home Assistant
-2. Upewnij się że TGE publikuje dane (po 11:05 i 13:20)
-3. Zgłoś problem z logami w Issues
-
-## Licencja
-
-MIT License
+**Wszystkie ceny w atrybutach zawierają już pełne naliczenia zgodnie z wzorem!**
