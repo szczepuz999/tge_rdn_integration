@@ -1,0 +1,19 @@
+{
+  "domain": "tge_rdn",
+  "name": "TGE RDN Energy Prices",
+  "codeowners": [
+    "@user"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/user/tge-rdn-integration",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/user/tge-rdn-integration/issues",
+  "requirements": [
+    "pandas>=1.5.0",
+    "requests>=2.28.0",
+    "openpyxl>=3.0.9"
+  ],
+  "version": "1.0.0"
+}

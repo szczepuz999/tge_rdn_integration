@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "TGE RDN - Konfiguracja",
+        "description": "Skonfiguruj integrację TGE RDN do pobierania cen energii elektrycznej.\\n\\nWymagane biblioteki: {required_libraries}",
+        "data": {
+          "name": "Nazwa integracji"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie można połączyć się z serwerem TGE",
+      "missing_libraries": "Brakuje wymaganych bibliotek Python. Home Assistant spróbuje je zainstalować automatycznie. Poczekaj i uruchom ponownie Home Assistant.",
+      "unknown": "Nieznany błąd"
+    },
+    "abort": {
+      "already_configured": "Integracja jest już skonfigurowana"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje TGE RDN",
+        "description": "Skonfiguruj opcje wyświetlania cen",
+        "data": {
+          "unit": "Jednostka ceny",
+          "template": "Template Jinja2 (opcjonalny)"
+        }
+      }
+    }
+  }
+}
