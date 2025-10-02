@@ -8,7 +8,8 @@ UPDATE_INTERVAL_CURRENT = 600  # 10 minut po północy
 UPDATE_INTERVAL_NEXT_DAY = 15 * 60  # 15:00 na następny dzień
 
 # URL pattern
-TGE_URL_PATTERN = "https://www.tge.pl/pub/TGE/SDAC%20{year}/RDN/Raport_RDN_dzie_dostawy_delivery_day_{year}_{month:02d}_{day:02d}.xlsx"
+TGE_URL_PATTERN = "https://www.tge.pl/pub/TGE/Wyniki%2015/RDN/Raport_RDN_dzie_dostawy_delivery_day_{year}_{month:02d}_{day:02d}.xlsx"
+
 
 # Jednostki
 UNIT_PLN_MWH = "PLN/MWh"
