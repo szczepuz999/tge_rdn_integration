@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform."""
+"""TGE RDN sensor platform - FIXED Template issue."""
 import logging
 import asyncio
 from datetime import datetime, timedelta, time
@@ -248,6 +248,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._coordinator = coordinator
         self._entry = entry
         self._sensor_type = sensor_type
         self._attr_name = f"{DEFAULT_NAME} {sensor_type.replace('_', ' ').title()}"
@@ -264,10 +265,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._dist_med = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
         self._dist_high = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
 
+        # FIXED: Poprawne tworzenie Template z dostępem do hass
+        self._template = None
         if self._template_str != DEFAULT_TEMPLATE:
-            self._template = Template(self._template_str, self.hass)
-        else:
-            self._template = None
+            try:
+                self._template = Template(self._template_str, coordinator.hass)
+            except Exception as err:
+                _LOGGER.error(f"Error creating template '{self._template_str}': {err}")
+                self._template = None
 
     @property
     def available(self) -> bool:
@@ -353,13 +358,19 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             if value is None:
                 return None
 
-            # Zastosuj template jeśli jest ustawiony
+            # FIXED: Poprawne zastosowanie Template
             if self._template:
                 try:
-                    result = self._template.async_render(value=value)
+                    # Użyj render() z odpowiednim kontekstem
+                    template_variables = {
+                        'value': value,
+                        'now': datetime.now(),
+                        'this': self
+                    }
+                    result = self._template.render(template_variables)
                     return float(result)
                 except Exception as err:
-                    _LOGGER.error(f"Error applying template: {err}")
+                    _LOGGER.error(f"Error applying template '{self._template_str}': {err}")
                     return value
 
             return value
@@ -492,6 +503,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             "unit_converted": self._unit,
             "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
             "pricing_formula": "(TGE_price × (1 + VAT)) + exchange_fee + distribution_rate",
+            "template_status": "active" if self._template else "inactive",
+            "template_string": self._template_str if self._template_str != DEFAULT_TEMPLATE else None,
             "components": {
                 "base_energy_pln_mwh": base_price,
                 "tge_with_vat_pln_mwh": tge_with_vat,
