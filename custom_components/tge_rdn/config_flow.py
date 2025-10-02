@@ -42,18 +42,20 @@ UNIT_OPTIONS = [
     UNIT_EUR_KWH,
 ]
 
-
-async def validate_libraries(hass: HomeAssistant) -> bool:
-    """Validate that required libraries are available."""
+def _validate_libraries():
+    """Validate required libraries synchronously."""
     try:
-        import pandas
-        import requests
-        import openpyxl
+        import pandas  # noqa: F401
+        import requests  # noqa: F401
+        import openpyxl  # noqa: F401
         return True
     except ImportError as err:
         _LOGGER.error("Required libraries not available: %s", err)
         return False
 
+async def validate_libraries(hass: HomeAssistant) -> bool:
+    """Validate that required libraries are available."""
+    return await hass.async_add_executor_job(_validate_libraries)
 
 class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TGE RDN."""
@@ -67,7 +69,7 @@ class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Sprawdź dostępność bibliotek
+            # Check library availability
             if not await validate_libraries(self.hass):
                 errors["base"] = "missing_libraries"
             else:
@@ -93,9 +95,8 @@ class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Create the options flow."""
         return TGERDNOptionsFlowHandler(config_entry)
 
-
 class TGERDNOptionsFlowHandler(config_entries.OptionsFlow):
-    """TGE RDN config flow options handler."""
+    """TGE RDN options flow handler."""
 
     def __init__(self, config_entry):
         """Initialize options flow."""
@@ -142,10 +143,8 @@ class TGERDNOptionsFlowHandler(config_entries.OptionsFlow):
             }),
         )
 
-
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
-
 
 class MissingLibraries(HomeAssistantError):
     """Error to indicate missing required libraries."""

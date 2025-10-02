@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "Opcje TGE RDN",
-        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja\\n\\n⚠️ NAPRAWIONO błąd Template - teraz działa poprawnie!",
+        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\n✅ NAPRAWIONO wszystkie błędy Template, Excel i importów!\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
         "data": {
           "unit": "Jednostka ceny",
           "template": "Template Jinja2 (opcjonalny)",

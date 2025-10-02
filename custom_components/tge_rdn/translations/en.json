@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "TGE RDN Options",
-        "description": "Configure price display options and additional fees.\\n\\nFormula: (TGE_price × (1 + VAT)) + exchange_fee + distribution\\n\\n⚠️ FIXED Template error - now works correctly!",
+        "description": "Configure price display options and additional fees.\\n\\n✅ FIXED all Template, Excel and import errors!\\n\\nFormula: (TGE_price × (1 + VAT)) + exchange_fee + distribution",
         "data": {
           "unit": "Price unit",
           "template": "Jinja2 template (optional)",

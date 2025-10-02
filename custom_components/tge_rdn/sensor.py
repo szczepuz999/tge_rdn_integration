@@ -1,6 +1,8 @@
-"""TGE RDN sensor platform - FIXED Template issue."""
+"""TGE RDN sensor platform - All fixes applied."""
 import logging
 import asyncio
+import io
+import re
 from datetime import datetime, timedelta, time
 from typing import Dict, List, Optional, Any
 
@@ -13,7 +15,6 @@ except ImportError as err:
     REQUIRED_LIBRARIES_AVAILABLE = False
     IMPORT_ERROR = str(err)
 
-import re
 import voluptuous as vol
 
 from homeassistant.components.sensor import SensorEntity
@@ -57,13 +58,12 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up TGE RDN sensors based on a config entry."""
 
-    # Sprawdź czy wymagane biblioteki są dostępne
+    # Check if required libraries are available
     if not REQUIRED_LIBRARIES_AVAILABLE:
         _LOGGER.error(
             "Required libraries not available for TGE RDN integration: %s. "
@@ -78,17 +78,16 @@ async def async_setup_entry(
 
     entities = []
 
-    # Sensor ceny aktualnej
+    # Current price sensor
     entities.append(TGERDNSensor(coordinator, entry, "current_price"))
 
-    # Sensor następnej godziny
+    # Next hour price sensor
     entities.append(TGERDNSensor(coordinator, entry, "next_hour_price"))
 
-    # Sensor średniej ceny dziennej
+    # Daily average price sensor
     entities.append(TGERDNSensor(coordinator, entry, "daily_average"))
 
     async_add_entities(entities, True)
-
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching TGE RDN data."""
@@ -98,7 +97,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.entry = entry
 
-        # Określ interwał aktualizacji na podstawie godziny
+        # Determine update interval based on time
         update_interval = self._get_update_interval()
 
         super().__init__(
@@ -112,15 +111,15 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         """Get update interval based on current time."""
         now = datetime.now()
 
-        # Po północy (00:10) - pobierz dane na dziś
+        # After midnight (00:10) - fetch today's data
         if now.time() >= time(0, 10) and now.time() <= time(0, 30):
             return UPDATE_INTERVAL_CURRENT
 
-        # O 15:00 - pobierz dane na jutro
+        # At 15:00 - fetch tomorrow's data
         elif now.time() >= time(15, 0) and now.time() <= time(15, 30):
             return UPDATE_INTERVAL_NEXT_DAY
 
-        # W innych godzinach - sprawdzaj co godzinę
+        # Other hours - check every hour
         else:
             return 3600
 
@@ -132,10 +131,10 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             now = datetime.now()
 
-            # Pobierz dane dla dzisiaj
+            # Fetch data for today
             today_data = await self._fetch_day_data(now)
 
-            # Pobierz dane dla jutra jeśli są dostępne
+            # Fetch data for tomorrow if available
             tomorrow = now + timedelta(days=1)
             tomorrow_data = await self._fetch_day_data(tomorrow)
 
@@ -186,16 +185,21 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel data from TGE RDN file."""
+        """Parse Excel data from TGE RDN file - FIXED BytesIO and validation."""
         try:
-            # Wczytaj Excel z bytes
-            excel_file = pd.ExcelFile(file_content)
-            df = pd.read_excel(excel_file, sheet_name="WYNIKI", header=None)
+            # FIXED: Check if downloaded file is valid Excel (not HTML error page)
+            if len(file_content) < 1000 or file_content.startswith(b'<'):
+                _LOGGER.warning(f"Downloaded file for {date.date()} is not a valid Excel file (probably HTML error page)")
+                raise ValueError(f"Downloaded file for {date.date()} is not a valid Excel file")
 
-            # Parsuj dane godzinowe
+            # FIXED: Use BytesIO and specify engine to avoid deprecation warning
+            excel_file = io.BytesIO(file_content)
+            df = pd.read_excel(excel_file, sheet_name="WYNIKI", header=None, engine="openpyxl")
+
+            # Parse hourly data
             hourly_data = []
-            time_column = 8  # Kolumna I
-            price_column = 10  # Kolumna K
+            time_column = 8   # Column I
+            price_column = 10 # Column K
 
             for index, row in df.iterrows():
                 time_value = row[time_column]
@@ -207,9 +211,9 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                         if pd.notna(price_value) and isinstance(price_value, (int, float)) and price_value > 0:
                             hour = int(time_value.split('_H')[1])
 
-                            # Utwórz datetime dla konkretnej godziny
+                            # Create datetime for specific hour
                             hour_datetime = date.replace(
-                                hour=hour-1,  # TGE używa 1-24, Python 0-23
+                                hour=hour-1,  # TGE uses 1-24, Python 0-23
                                 minute=0,
                                 second=0,
                                 microsecond=0
@@ -221,10 +225,10 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                                 'price': float(price_value)
                             })
 
-            # Sortuj według godziny
+            # Sort by hour
             hourly_data.sort(key=lambda x: x['hour'])
 
-            # Oblicz średnią
+            # Calculate statistics
             prices = [item['price'] for item in hourly_data]
             average_price = sum(prices) / len(prices) if prices else 0
 
@@ -241,9 +245,8 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error parsing Excel data: {err}")
             raise
 
-
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor."""
+    """TGE RDN sensor - FIXED Template handling."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -254,7 +257,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = f"{DEFAULT_NAME} {sensor_type.replace('_', ' ').title()}"
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{sensor_type}"
 
-        # Konfiguracja z entry
+        # Configuration from entry
         self._unit = entry.options.get(CONF_UNIT, DEFAULT_UNIT)
         self._template_str = entry.options.get(CONF_TEMPLATE, DEFAULT_TEMPLATE)
 
@@ -265,7 +268,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._dist_med = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
         self._dist_high = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
 
-        # FIXED: Poprawne tworzenie Template z dostępem do hass
+        # FIXED: Template creation with proper hass reference
         self._template = None
         if self._template_str != DEFAULT_TEMPLATE:
             try:
@@ -294,26 +297,26 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         month = local.month
         hour = local.hour  # 0-23
 
-        # Określ sezon: lato (kwiecień-wrzesień) vs zima (październik-marzec)
+        # Determine season: summer (April-September) vs winter (October-March)
         is_summer = month in (4, 5, 6, 7, 8, 9)
 
-        # Mapuj godziny na pasma taryfowe
+        # Map hours to tariff bands
         if is_summer:
-            # Lato: szczyt przedpołudniowy (7-13), szczyt popołudniowy (19-22), pozostałe (13-19 i 22-7)
+            # Summer: morning peak (7-13), evening peak (19-22), off-peak (13-19 and 22-7)
             if 7 <= hour < 13:
-                return self._dist_med  # szczyt przedpołudniowy
+                return self._dist_med  # morning peak
             elif 19 <= hour < 22:
-                return self._dist_high  # szczyt popołudniowy
+                return self._dist_high  # evening peak
             else:
-                return self._dist_low  # pozostałe godziny
+                return self._dist_low  # off-peak hours
         else:
-            # Zima: szczyt przedpołudniowy (7-13), szczyt popołudniowy (16-21), pozostałe (13-16 i 21-7)
+            # Winter: morning peak (7-13), evening peak (16-21), off-peak (13-16 and 21-7)
             if 7 <= hour < 13:
-                return self._dist_med  # szczyt przedpołudniowy
+                return self._dist_med  # morning peak
             elif 16 <= hour < 21:
-                return self._dist_high  # szczyt popołudniowy
+                return self._dist_high  # evening peak
             else:
-                return self._dist_low  # pozostałe godziny
+                return self._dist_low  # off-peak hours
 
     def _compute_total_price(self, base_pln_mwh: float, when) -> float:
         """
@@ -322,26 +325,26 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         """
         dist_rate = self._get_distribution_rate(when)
 
-        # VAT naliczany tylko od ceny TGE
+        # VAT applied only to TGE price
         tge_with_vat = float(base_pln_mwh) * (1.0 + float(self._vat_rate))
 
-        # Opłaty dodawane bez VAT
+        # Add fees without VAT
         total_gross = tge_with_vat + float(self._exchange_fee) + float(dist_rate)
 
         return total_gross
 
     def _convert_units(self, value: float) -> float:
         """Convert price units."""
-        # Wartość wejściowa już w PLN/MWh brutto
+        # Input value already in PLN/MWh gross
         if self._unit == UNIT_PLN_KWH:
-            return value / 1000  # MWh na kWh
+            return value / 1000  # MWh to kWh
         elif self._unit == UNIT_EUR_MWH:
-            # Kurs EUR/PLN - dla uproszczenia używam 4.3
+            # EUR/PLN rate - simplified to 4.3
             return value / 4.3
         elif self._unit == UNIT_EUR_KWH:
             return value / 4.3 / 1000
 
-        return value  # PLN/MWh - domyślnie
+        return value  # PLN/MWh - default
 
     @property
     def state(self) -> Optional[float]:
@@ -358,10 +361,9 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             if value is None:
                 return None
 
-            # FIXED: Poprawne zastosowanie Template
+            # FIXED: Template application with proper render method
             if self._template:
                 try:
-                    # Użyj render() z odpowiednim kontekstem
                     template_variables = {
                         'value': value,
                         'now': datetime.now(),
@@ -401,7 +403,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if not today_data or not today_data.get("hourly_data"):
             return None
 
-        current_hour = now.hour + 1  # TGE używa 1-24
+        current_hour = now.hour + 1  # TGE uses 1-24
 
         for item in today_data["hourly_data"]:
             if item["hour"] == current_hour:
@@ -412,9 +414,9 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     def _get_total_next_hour_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
         """Get next hour price with all fees and VAT."""
-        next_hour = now.hour + 2  # Następna godzina w systemie TGE
+        next_hour = now.hour + 2  # Next hour in TGE system
 
-        # Jeśli następna godzina to jutro
+        # If next hour is tomorrow
         if next_hour > 24:
             tomorrow_data = data.get("tomorrow")
             if not tomorrow_data or not tomorrow_data.get("hourly_data"):
@@ -444,10 +446,10 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if not today_data:
             return None
 
-        # Oblicz średnią z cen brutto dla wszystkich godzin
+        # Calculate average of gross prices for all hours
         total_prices = []
         for item in today_data.get('hourly_data', []):
-            # Konstrukcja datetime dla konkretnej godziny
+            # Construct datetime for specific hour
             hour_dt = now.replace(
                 hour=(item['hour']-1) % 24, 
                 minute=0, 
@@ -472,7 +474,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return {}
 
-        # Obliczenia dla bieżącej godziny
+        # Calculations for current hour
         now = datetime.now()
         base_price = None
         today_data = self.coordinator.data.get("today")
@@ -486,7 +488,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         dist_rate = self._get_distribution_rate(now)
 
-        # Oblicz komponenty ceny
+        # Calculate price components
         if base_price is not None:
             tge_with_vat = base_price * (1.0 + self._vat_rate)
             total_gross = tge_with_vat + self._exchange_fee + dist_rate
@@ -516,10 +518,10 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         }
 
         if today_data:
-            # Oblicz ceny brutto dla wszystkich godzin dzisiaj
+            # Calculate gross prices for all hours today
             prices_today_gross = []
             for item in today_data.get("hourly_data", []):
-                # Konstrukcja datetime dla godziny
+                # Construct datetime for hour
                 hour_dt = now.replace(
                     hour=(item['hour']-1) % 24, 
                     minute=0, 
@@ -537,7 +539,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     'price_gross_pln_mwh': gross_price_pln_mwh
                 })
 
-            # Oblicz statystyki brutto dla dzisiaj
+            # Calculate gross statistics for today
             gross_prices = [p['price_gross'] for p in prices_today_gross]
 
             attributes.update({
@@ -545,19 +547,19 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "today_min": today_data.get("min_price"),
                 "today_max": today_data.get("max_price"),
                 "today_hours": today_data.get("total_hours"),
-                "prices_today": today_data.get("hourly_data", []),  # Oryginalne ceny TGE
-                "prices_today_gross": prices_today_gross,  # Ceny brutto z VAT i dystrybucją
+                "prices_today": today_data.get("hourly_data", []),  # Original TGE prices
+                "prices_today_gross": prices_today_gross,  # Gross prices with VAT and distribution
                 "today_average_gross": sum(gross_prices) / len(gross_prices) if gross_prices else None,
                 "today_min_gross": min(gross_prices) if gross_prices else None,
                 "today_max_gross": max(gross_prices) if gross_prices else None,
             })
 
         if tomorrow_data:
-            # Oblicz ceny brutto dla wszystkich godzin jutro
+            # Calculate gross prices for all hours tomorrow
             prices_tomorrow_gross = []
             tomorrow_date = now + timedelta(days=1)
             for item in tomorrow_data.get("hourly_data", []):
-                # Konstrukcja datetime dla jutrzejszej godziny
+                # Construct datetime for tomorrow's hour
                 hour_dt = tomorrow_date.replace(
                     hour=(item['hour']-1) % 24, 
                     minute=0, 
@@ -575,7 +577,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     'price_gross_pln_mwh': gross_price_pln_mwh
                 })
 
-            # Oblicz statystyki brutto dla jutra
+            # Calculate gross statistics for tomorrow
             gross_prices_tomorrow = [p['price_gross'] for p in prices_tomorrow_gross]
 
             attributes.update({
@@ -583,8 +585,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "tomorrow_min": tomorrow_data.get("min_price"),
                 "tomorrow_max": tomorrow_data.get("max_price"),
                 "tomorrow_hours": tomorrow_data.get("total_hours"),
-                "prices_tomorrow": tomorrow_data.get("hourly_data", []),  # Oryginalne ceny TGE
-                "prices_tomorrow_gross": prices_tomorrow_gross,  # Ceny brutto z VAT i dystrybucją
+                "prices_tomorrow": tomorrow_data.get("hourly_data", []),  # Original TGE prices
+                "prices_tomorrow_gross": prices_tomorrow_gross,  # Gross prices with VAT and distribution
                 "tomorrow_average_gross": sum(gross_prices_tomorrow) / len(gross_prices_tomorrow) if gross_prices_tomorrow else None,
                 "tomorrow_min_gross": min(gross_prices_tomorrow) if gross_prices_tomorrow else None,
                 "tomorrow_max_gross": max(gross_prices_tomorrow) if gross_prices_tomorrow else None,
