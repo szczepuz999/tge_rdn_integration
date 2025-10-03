@@ -3,9 +3,11 @@
 DOMAIN = "tge_rdn"
 DEFAULT_NAME = "TGE RDN"
 
-# Update intervals
-UPDATE_INTERVAL_CURRENT = 600  # 10 minutes after midnight
-UPDATE_INTERVAL_NEXT_DAY = 15 * 60  # 15:00 for next day
+# Update intervals - IMPROVED TIMING
+UPDATE_INTERVAL_CURRENT = 300   # 5 minutes after midnight (faster for today data)
+UPDATE_INTERVAL_NEXT_DAY = 600  # 10 minutes during tomorrow data window (14:00-16:00)
+UPDATE_INTERVAL_FREQUENT = 900  # 15 minutes during frequent check periods  
+UPDATE_INTERVAL_NORMAL = 3600   # 1 hour during normal periods
 
 # TGE URL pattern - FIXED based on actual TGE structure
 TGE_URL_PATTERN = "https://www.tge.pl/pub/TGE/Wyniki%2015/RDN/Raport_RDN_dzie_dostawy_delivery_day_{year}_{month:02d}_{day:02d}.xlsx"
