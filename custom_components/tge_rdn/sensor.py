@@ -1,9 +1,9 @@
-"""TGE RDN sensor platform - FIXED TOMORROW DATA PRESERVATION."""
+"""TGE RDN sensor platform - WITH POLISH HOLIDAYS SUPPORT."""
 import logging
 import asyncio
 import io
 import re
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date
 from typing import Dict, List, Optional, Any
 
 try:
@@ -106,7 +106,7 @@ async def async_setup_entry(
         _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data - FIXED TOMORROW DATA PRESERVATION."""
+    """Class to manage fetching TGE RDN data - WITH POLISH HOLIDAYS."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize."""
@@ -270,7 +270,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Error communicating with TGE API: {err}")
 
     async def _handle_tomorrow_data(self, now: datetime) -> Optional[Dict[str, Any]]:
-        """Handle tomorrow data - preserve existing or fetch new - FIXED LOGIC."""
+        """Handle tomorrow data - preserve existing or fetch new."""
 
         # Check if we should try to fetch new tomorrow data
         should_fetch_tomorrow = self._should_fetch_tomorrow_data(now)
@@ -308,7 +308,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 return None
 
     def _should_fetch_tomorrow_data(self, now: datetime) -> bool:
-        """Determine if we should fetch tomorrow's data - FIXED TIME LOGIC."""
+        """Determine if we should fetch tomorrow's data."""
         current_time = now.time()
 
         # Before 13:30 - don't fetch (too early)
@@ -483,7 +483,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor with NEGATIVE PRICE HANDLING for prosumers."""
+    """TGE RDN sensor with POLISH HOLIDAYS & NEGATIVE PRICE HANDLING."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -515,15 +515,30 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         return self._unit
 
     def _get_distribution_rate(self, when) -> float:
-        """Return distribution rate [PLN/MWh] based on local time and season."""
+        """Return distribution rate [PLN/MWh] based on local time, season and POLISH HOLIDAYS."""
         try:
             local = when.astimezone() if hasattr(when, 'astimezone') else when
         except Exception:
             local = when
 
         month = local.month
+        day = local.day
         hour = local.hour  # 0-23
+        weekday = local.weekday()  # 0=Monday, 6=Sunday
 
+        # Check if it's weekend (Saturday=5, Sunday=6)
+        is_weekend = weekday in (5, 6)
+
+        # Check if it's a Polish national holiday
+        is_polish_holiday = self._is_polish_holiday(local.date())
+
+        # Weekend or holiday = lowest rate all day
+        if is_weekend or is_polish_holiday:
+            if is_polish_holiday:
+                _LOGGER.debug(f"🇵🇱 Polish holiday detected: {local.date()} - using lowest distribution rate")
+            return self._dist_low
+
+        # Weekday - normal tariff bands
         # Determine season: summer (April-September) vs winter (October-March)
         is_summer = month in (4, 5, 6, 7, 8, 9)
 
@@ -545,6 +560,61 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             else:
                 return self._dist_low  # off-peak hours
 
+    def _is_polish_holiday(self, date) -> bool:
+        """Check if date is a Polish national holiday."""
+        year = date.year
+        month = date.month
+        day = date.day
+
+        # Fixed holidays
+        fixed_holidays = [
+            (1, 1),   # New Year's Day - Nowy Rok
+            (1, 6),   # Epiphany - Święto Trzech Króli
+            (5, 1),   # May Day - Święto Pracy
+            (5, 3),   # Constitution Day - Święto Konstytucji 3 Maja
+            (8, 15),  # Assumption Day - Wniebowzięcie NMP
+            (11, 1),  # All Saints Day - Wszystkich Świętych
+            (11, 11), # Independence Day - Święto Niepodległości
+            (12, 25), # Christmas Day - Boże Narodzenie
+            (12, 26), # Boxing Day - Drugi Dzień Świąt Bożego Narodzenia
+        ]
+
+        if (month, day) in fixed_holidays:
+            return True
+
+        # Calculate Easter Sunday for moveable holidays
+        easter_date = self._calculate_easter(year)
+
+        # Moveable holidays relative to Easter
+        moveable_holidays = [
+            easter_date,  # Easter Sunday - Wielkanoc
+            easter_date + timedelta(days=1),   # Easter Monday - Poniedziałek Wielkanocny
+            easter_date + timedelta(days=49),  # Whit Sunday - Zielone Świątki
+            easter_date + timedelta(days=60),  # Corpus Christi - Boże Ciało
+        ]
+
+        return date in moveable_holidays
+
+    def _calculate_easter(self, year: int):
+        """Calculate Easter Sunday for given year using Gregorian algorithm."""
+        # Gregorian calendar Easter calculation
+        a = year % 19
+        b = year // 100
+        c = year % 100
+        d = b // 4
+        e = b % 4
+        f = (b + 8) // 25
+        g = (b - f + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        i = c // 4
+        k = c % 4
+        l = (32 + 2 * e + 2 * i - h - k) % 7
+        m = (a + 11 * h + 22 * l) // 451
+        month = (h + l - 7 * m + 114) // 31
+        day = ((h + l - 7 * m + 114) % 31) + 1
+
+        return date(year, month, day)
+
     def _compute_total_price(self, base_pln_mwh: float, when, debug_info: bool = False) -> Dict[str, Any]:
         """
         Compute total price with PROSUMER NEGATIVE PRICE HANDLING.
@@ -553,6 +623,10 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         Formula: total_gross = (max(0, cena_TGE) × (1 + VAT)) + exchange_fee + distribution_rate
         """
         dist_rate = self._get_distribution_rate(when)
+
+        # Check if this is weekend/holiday for logging
+        is_weekend = when.weekday() in (5, 6)
+        is_polish_holiday = self._is_polish_holiday(when.date())
 
         # PROSUMER NEGATIVE PRICE HANDLING
         is_negative = base_pln_mwh < 0
@@ -564,15 +638,19 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         # Add fees and distribution (always applied, even for negative TGE prices)
         total_gross = energy_with_vat + float(self._exchange_fee) + float(dist_rate)
 
-        if debug_info or is_negative:
+        if debug_info or is_negative or is_polish_holiday:
             if is_negative:
                 _LOGGER.debug(f"Negative price handling: TGE={base_pln_mwh:.2f} → Energy=0, Distribution={dist_rate:.2f}, Total={total_gross:.2f} PLN/MWh")
+            if is_polish_holiday:
+                _LOGGER.debug(f"🇵🇱 Polish holiday pricing: Distribution={dist_rate:.2f} PLN/MWh (lowest rate)")
 
         return {
             "total_gross": total_gross,
             "original_tge_price": base_pln_mwh,
             "effective_energy_price": effective_energy_price,
             "is_negative_hour": is_negative,
+            "is_weekend": is_weekend,
+            "is_polish_holiday": is_polish_holiday,
             "energy_with_vat": energy_with_vat,
             "distribution": dist_rate,
             "exchange_fee": self._exchange_fee,
@@ -695,7 +773,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes - WITH NEGATIVE PRICE INFO."""
+        """Return extra state attributes - WITH POLISH HOLIDAYS & NEGATIVE PRICE INFO."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             return {"error": "Required libraries not available"}
 
@@ -707,6 +785,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         base_price = None
         current_price_calc = None
         today_data = self.coordinator.data.get("today")
+
+        # Check today and tomorrow for holidays/weekends
+        today_is_weekend = now.weekday() in (5, 6)
+        today_is_holiday = self._is_polish_holiday(now.date())
+
+        tomorrow = now + timedelta(days=1)
+        tomorrow_is_weekend = tomorrow.weekday() in (5, 6)
+        tomorrow_is_holiday = self._is_polish_holiday(tomorrow.date())
 
         if today_data and today_data.get("hourly_data"):
             current_hour = now.hour + 1
@@ -748,6 +834,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
             "pricing_formula": "max(0, TGE_price) × (1 + VAT) + exchange_fee + distribution_rate",
             "negative_price_handling": "Prosumer: negative TGE price → 0 energy cost, still pay distribution",
+            "polish_holidays_support": "Weekends and Polish holidays use lowest distribution rate 24h",
             "startup_immediate_fetch": startup_fetch,
             "tge_publishes_daily": "TGE publishes data EVERY DAY including weekends",
             "data_status": {
@@ -761,6 +848,10 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "tomorrow_day": tomorrow_status.get("tomorrow_day", "Unknown"),
                 "today_negative": today_negative_info,
                 "tomorrow_negative": tomorrow_negative_info,
+                "today_is_weekend": today_is_weekend,
+                "today_is_polish_holiday": today_is_holiday,
+                "tomorrow_is_weekend": tomorrow_is_weekend,
+                "tomorrow_is_polish_holiday": tomorrow_is_holiday,
             },
             "current_hour_components": current_price_calc if current_price_calc else {
                 "error": "Current hour data not available"
@@ -768,7 +859,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         }
 
         if today_data:
-            # Calculate gross prices for all hours today WITH NEGATIVE PRICE HANDLING
+            # Calculate gross prices for all hours today WITH NEGATIVE PRICE HANDLING & HOLIDAYS
             prices_today_gross = []
             for item in today_data.get("hourly_data", []):
                 # Construct datetime for hour
@@ -787,6 +878,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     'price_tge_original': item['price'],  # Original TGE (can be negative)
                     'price_energy_effective': price_calc["effective_energy_price"],  # Energy price used (0 if negative)
                     'is_negative_hour': price_calc["is_negative_hour"],
+                    'is_weekend': price_calc["is_weekend"],
+                    'is_polish_holiday': price_calc["is_polish_holiday"],
                     'price_gross': gross_price_converted,
                     'price_gross_pln_mwh': price_calc["total_gross"],
                     'components': {
@@ -805,14 +898,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "today_max": today_data.get("max_price"),
                 "today_hours": today_data.get("total_hours"),
                 "prices_today": today_data.get("hourly_data", []),  # Original TGE prices
-                "prices_today_gross": prices_today_gross,  # Prosumer gross prices with negative handling
+                "prices_today_gross": prices_today_gross,  # Prosumer gross prices with holidays handling
                 "today_average_gross": sum(gross_prices) / len(gross_prices) if gross_prices else None,
                 "today_min_gross": min(gross_prices) if gross_prices else None,
                 "today_max_gross": max(gross_prices) if gross_prices else None,
             })
 
         if tomorrow_data:
-            # Calculate gross prices for all hours tomorrow WITH NEGATIVE PRICE HANDLING
+            # Calculate gross prices for all hours tomorrow WITH NEGATIVE PRICE HANDLING & HOLIDAYS
             prices_tomorrow_gross = []
             tomorrow_date = now + timedelta(days=1)
             for item in tomorrow_data.get("hourly_data", []):
@@ -832,6 +925,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     'price_tge_original': item['price'],  # Original TGE (can be negative)
                     'price_energy_effective': price_calc["effective_energy_price"],  # Energy price used (0 if negative)
                     'is_negative_hour': price_calc["is_negative_hour"],
+                    'is_weekend': price_calc["is_weekend"],
+                    'is_polish_holiday': price_calc["is_polish_holiday"],
                     'price_gross': gross_price_converted,
                     'price_gross_pln_mwh': price_calc["total_gross"],
                     'components': {
@@ -850,7 +945,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "tomorrow_max": tomorrow_data.get("max_price"),
                 "tomorrow_hours": tomorrow_data.get("total_hours"),
                 "prices_tomorrow": tomorrow_data.get("hourly_data", []),  # Original TGE prices
-                "prices_tomorrow_gross": prices_tomorrow_gross,  # Prosumer gross prices with negative handling
+                "prices_tomorrow_gross": prices_tomorrow_gross,  # Prosumer gross prices with holidays handling
                 "tomorrow_average_gross": sum(gross_prices_tomorrow) / len(gross_prices_tomorrow) if gross_prices_tomorrow else None,
                 "tomorrow_min_gross": min(gross_prices_tomorrow) if gross_prices_tomorrow else None,
                 "tomorrow_max_gross": max(gross_prices_tomorrow) if gross_prices_tomorrow else None,
