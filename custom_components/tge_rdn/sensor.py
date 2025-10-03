@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - All fixes applied."""
+"""TGE RDN sensor platform - IMPROVED file validation."""
 import logging
 import asyncio
 import io
@@ -148,7 +148,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Error communicating with TGE API: {err}")
 
     async def _fetch_day_data(self, date: datetime) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific day."""
+        """Fetch data for specific day with improved error handling."""
         try:
             url = TGE_URL_PATTERN.format(
                 year=date.year,
@@ -163,13 +163,17 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             )
 
             if response is None:
-                _LOGGER.warning(f"No data available for {date.date()}")
+                _LOGGER.info(f"No HTTP response for {date.date()}")
                 return None
 
             return await self.hass.async_add_executor_job(
                 self._parse_excel_data, response, date
             )
 
+        except ValueError as ve:
+            # This is our custom validation error - data not available (normal)
+            _LOGGER.info(f"Data not yet available for {date.date()}: {ve}")
+            return None
         except Exception as err:
             _LOGGER.error(f"Error fetching data for {date.date()}: {err}")
             return None
@@ -181,18 +185,50 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             response.raise_for_status()
             return response.content
         except requests.RequestException as err:
-            _LOGGER.error(f"Error downloading file: {err}")
+            _LOGGER.info(f"Error downloading file: {err}")
             return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel data from TGE RDN file - FIXED BytesIO and validation."""
+        """Parse Excel data from TGE RDN file - IMPROVED validation."""
         try:
-            # FIXED: Check if downloaded file is valid Excel (not HTML error page)
-            if len(file_content) < 1000 or file_content.startswith(b'<'):
-                _LOGGER.warning(f"Downloaded file for {date.date()} is not a valid Excel file (probably HTML error page)")
-                raise ValueError(f"Downloaded file for {date.date()} is not a valid Excel file")
+            # IMPROVED: Better validation for Excel vs HTML
+            def is_valid_excel_file(content: bytes) -> tuple[bool, str]:
+                """Check if content is a valid Excel file."""
+                if len(content) < 100:
+                    return False, f"File too small ({len(content)} bytes)"
 
-            # FIXED: Use BytesIO and specify engine to avoid deprecation warning
+                # Check for HTML content (various ways)
+                content_lower = content[:1000].lower()  # Check more content
+                html_indicators = [b'<html', b'<!doctype', b'<head>', b'<body>', b'<title>', b'<meta', b'<div', b'<p>']
+                for indicator in html_indicators:
+                    if indicator in content_lower:
+                        return False, f"File contains HTML content (found {indicator.decode()})"
+
+                # Check for ZIP signature (Excel files are ZIP archives)
+                if not content.startswith(b'PK'):
+                    return False, f"File doesn't start with ZIP signature (starts with: {content[:10]})"
+
+                # Additional check for common error pages
+                error_indicators = [b'404', b'not found', b'error', b'exception', b'access denied', b'forbidden']
+                for indicator in error_indicators:
+                    if indicator in content_lower:
+                        return False, f"File appears to be an error page (contains '{indicator.decode()}')"
+
+                return True, "Valid Excel file"
+
+            # Validate file before processing
+            is_valid, reason = is_valid_excel_file(file_content)
+            if not is_valid:
+                # Log preview for debugging (first 200 chars, safely decoded)
+                try:
+                    preview = file_content[:200].decode('utf-8', errors='replace')
+                except:
+                    preview = str(file_content[:200])
+
+                _LOGGER.debug(f"File content preview for {date.date()}: {preview}")
+                raise ValueError(f"Invalid Excel file: {reason}")
+
+            # Use BytesIO and specify engine to avoid deprecation warning
             excel_file = io.BytesIO(file_content)
             df = pd.read_excel(excel_file, sheet_name="WYNIKI", header=None, engine="openpyxl")
 
@@ -206,7 +242,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 price_value = row[price_column]
 
                 if pd.notna(time_value) and isinstance(time_value, str):
-                    # Format: "01-10-25_H01"
+                    # Format: "01-10-25_H01"  
                     if re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}', str(time_value)):
                         if pd.notna(price_value) and isinstance(price_value, (int, float)) and price_value > 0:
                             hour = int(time_value.split('_H')[1])
@@ -228,9 +264,14 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             # Sort by hour
             hourly_data.sort(key=lambda x: x['hour'])
 
+            if not hourly_data:
+                raise ValueError("No valid price data found in Excel file")
+
             # Calculate statistics
             prices = [item['price'] for item in hourly_data]
             average_price = sum(prices) / len(prices) if prices else 0
+
+            _LOGGER.info(f"Successfully parsed {len(hourly_data)} hours of data for {date.date()}")
 
             return {
                 "date": date.date().isoformat(),
@@ -246,7 +287,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor - FIXED Template handling."""
+    """TGE RDN sensor."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -268,7 +309,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._dist_med = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
         self._dist_high = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
 
-        # FIXED: Template creation with proper hass reference
+        # Template creation with proper hass reference
         self._template = None
         if self._template_str != DEFAULT_TEMPLATE:
             try:
@@ -361,7 +402,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             if value is None:
                 return None
 
-            # FIXED: Template application with proper render method
+            # Template application with proper render method
             if self._template:
                 try:
                     template_variables = {
@@ -507,6 +548,12 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             "pricing_formula": "(TGE_price × (1 + VAT)) + exchange_fee + distribution_rate",
             "template_status": "active" if self._template else "inactive",
             "template_string": self._template_str if self._template_str != DEFAULT_TEMPLATE else None,
+            "data_status": {
+                "today_available": today_data is not None,
+                "tomorrow_available": tomorrow_data is not None,
+                "today_hours": len(today_data.get("hourly_data", [])) if today_data else 0,
+                "tomorrow_hours": len(tomorrow_data.get("hourly_data", [])) if tomorrow_data else 0
+            },
             "components": {
                 "base_energy_pln_mwh": base_price,
                 "tge_with_vat_pln_mwh": tge_with_vat,
