@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - IMPROVED TOMORROW DATA FETCHING."""
+"""TGE RDN sensor platform - WEEKEND FIXED - TGE PUBLISHES DAILY!"""
 import logging
 import asyncio
 import io
@@ -76,7 +76,12 @@ async def async_setup_entry(
         )
         raise Exception(f"Missing required libraries: {IMPORT_ERROR}")
 
+    _LOGGER.info("🚀 TGE RDN Integration starting up...")
+
     coordinator = TGERDNDataUpdateCoordinator(hass, entry)
+
+    # IMMEDIATE FETCH on startup - try to get both today and tomorrow data
+    _LOGGER.info("📡 Performing immediate data fetch on startup (ignoring schedule)...")
     await coordinator.async_config_entry_first_refresh()
 
     entities = []
@@ -92,8 +97,16 @@ async def async_setup_entry(
 
     async_add_entities(entities, True)
 
+    # Log startup summary
+    if coordinator.data:
+        today_available = coordinator.data.get("today") is not None
+        tomorrow_available = coordinator.data.get("tomorrow") is not None
+        _LOGGER.info(f"✅ TGE RDN Integration ready! Today: {'✅' if today_available else '❌'}, Tomorrow: {'✅' if tomorrow_available else '❌'}")
+    else:
+        _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
+
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data with IMPROVED TIMING."""
+    """Class to manage fetching TGE RDN data - WEEKEND FIXED."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize."""
@@ -101,6 +114,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.last_tomorrow_check = None
         self.tomorrow_data_available = False
+        self.startup_fetch_completed = False
 
         # Determine update interval based on time
         update_interval = self._get_update_interval()
@@ -113,7 +127,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         )
 
     def _get_update_interval(self) -> int:
-        """Get update interval based on current time - IMPROVED LOGIC."""
+        """Get update interval based on current time - NO WEEKEND DISCRIMINATION."""
         now = datetime.now()
         current_time = now.time()
 
@@ -129,14 +143,14 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Morning window - today's data publication time")
             return UPDATE_INTERVAL_FREQUENT  # 15 minutes
 
-        # 14:00-16:00: Tomorrow's data publication window - CHECK FREQUENTLY
+        # 14:00-16:00: Tomorrow's data publication window - CHECK FREQUENTLY EVERY DAY
         elif time(14, 0) <= current_time <= time(16, 0):
-            _LOGGER.debug("Afternoon window - tomorrow's data publication time")
+            _LOGGER.debug("Afternoon window - tomorrow's data publication time (DAILY - including weekends!)")
             return UPDATE_INTERVAL_NEXT_DAY  # 10 minutes
 
-        # 13:30-14:00: Pre-check for tomorrow data
+        # 13:30-14:00: Pre-check for tomorrow data EVERY DAY
         elif time(13, 30) <= current_time <= time(14, 0):
-            _LOGGER.debug("Pre-tomorrow window - preparing for tomorrow's data")
+            _LOGGER.debug("Pre-tomorrow window - preparing for tomorrow's data (DAILY)")
             return UPDATE_INTERVAL_FREQUENT  # 15 minutes
 
         # Other hours - normal interval
@@ -144,65 +158,138 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Normal hours - standard interval")
             return UPDATE_INTERVAL_NORMAL  # 1 hour
 
-    async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from TGE with IMPROVED TOMORROW DATA LOGIC."""
-        if not REQUIRED_LIBRARIES_AVAILABLE:
-            raise UpdateFailed(f"Required libraries not available: {IMPORT_ERROR}")
+    async def async_config_entry_first_refresh(self) -> None:
+        """Perform first refresh with IMMEDIATE FETCH of both days."""
+        _LOGGER.info("🔄 Starting first refresh with immediate fetch...")
 
         try:
-            now = datetime.now()
-            _LOGGER.info(f"Starting TGE data update at {now.strftime('%H:%M:%S')}")
+            # Force fetch both days immediately on startup - EVERY DAY
+            data = await self._force_fetch_both_days()
 
-            # Always fetch today's data
-            _LOGGER.debug("Fetching today's data")
+            if data:
+                self.data = data
+                self.startup_fetch_completed = True
+
+                today_status = "✅ Available" if data.get("today") else "❌ Not available"  
+                tomorrow_status = "✅ Available" if data.get("tomorrow") else "❌ Not available"
+                _LOGGER.info(f"🎯 Immediate fetch complete: Today {today_status}, Tomorrow {tomorrow_status}")
+            else:
+                _LOGGER.warning("⚠️ Immediate fetch returned no data")
+
+        except Exception as err:
+            _LOGGER.error(f"❌ Error during immediate fetch: {err}")
+            # Don't fail completely, continue with normal operation
+
+        # Continue with normal first refresh
+        await super().async_config_entry_first_refresh()
+
+    async def _force_fetch_both_days(self) -> Dict[str, Any]:
+        """Force fetch both today and tomorrow data immediately - EVERY DAY including weekends."""
+        now = datetime.now()
+        _LOGGER.info(f"🚀 FORCE FETCH: Getting both today and tomorrow data (TGE publishes DAILY including {now.strftime('%A')})")
+
+        try:
+            # Always try to fetch today's data
+            _LOGGER.info(f"📡 FORCE FETCH: Getting today's data ({now.date()})...")
             today_data = await self._fetch_day_data(now, "today")
 
-            # Determine if we should fetch tomorrow's data
-            should_fetch_tomorrow = self._should_fetch_tomorrow_data(now)
+            # Always try to fetch tomorrow's data - TGE PUBLISHES DAILY!
+            tomorrow = now + timedelta(days=1)
+            _LOGGER.info(f"📡 FORCE FETCH: Getting tomorrow's data ({tomorrow.date()} - {tomorrow.strftime('%A')})...")
+            tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
 
-            tomorrow_data = None
-            if should_fetch_tomorrow:
-                tomorrow = now + timedelta(days=1)
-                _LOGGER.info(f"Attempting to fetch tomorrow's data ({tomorrow.date()}) at {now.strftime('%H:%M:%S')}")
-                tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
-
-                # Update tomorrow data status
-                if tomorrow_data:
-                    if not self.tomorrow_data_available:
-                        _LOGGER.info(f"✅ Tomorrow's data became available at {now.strftime('%H:%M:%S')}")
-                    self.tomorrow_data_available = True
-                    self.last_tomorrow_check = now
-                else:
-                    if now.hour >= 14:  # Only log if we expect data to be available
-                        _LOGGER.info(f"Tomorrow's data not yet available at {now.strftime('%H:%M:%S')}")
-                    self.tomorrow_data_available = False
+            # Update tomorrow data status
+            if tomorrow_data:
+                _LOGGER.info(f"🎉 FORCE FETCH: Tomorrow's data ({tomorrow.strftime('%A')}) is available!")
+                self.tomorrow_data_available = True
+                self.last_tomorrow_check = now
             else:
-                _LOGGER.debug("Skipping tomorrow's data fetch (outside publication hours)")
+                _LOGGER.info(f"📅 FORCE FETCH: Tomorrow's data ({tomorrow.strftime('%A')}) not available yet - TGE may not have published it")
+                self.tomorrow_data_available = False
 
             result = {
                 "today": today_data,
                 "tomorrow": tomorrow_data,
                 "last_update": now,
+                "startup_fetch": True,
                 "tomorrow_data_status": {
                     "available": self.tomorrow_data_available,
                     "last_check": self.last_tomorrow_check,
-                    "expected_time": "14:00-15:30"
+                    "expected_time": "14:00-15:30 DAILY (including weekends)",
+                    "force_fetched": True,
+                    "tomorrow_day": tomorrow.strftime('%A')
+                }
+            }
+
+            return result
+
+        except Exception as err:
+            _LOGGER.error(f"❌ FORCE FETCH failed: {err}")
+            return {}
+
+    async def _async_update_data(self) -> Dict[str, Any]:
+        """Fetch data from TGE - DAILY INCLUDING WEEKENDS."""
+        if not REQUIRED_LIBRARIES_AVAILABLE:
+            raise UpdateFailed(f"Required libraries not available: {IMPORT_ERROR}")
+
+        try:
+            now = datetime.now()
+            _LOGGER.info(f"🔄 Regular update cycle at {now.strftime('%H:%M:%S')} on {now.strftime('%A')}")
+
+            # Always fetch today's data
+            _LOGGER.debug("📡 Fetching today's data")
+            today_data = await self._fetch_day_data(now, "today")
+
+            # Determine if we should fetch tomorrow's data - EVERY DAY
+            should_fetch_tomorrow = self._should_fetch_tomorrow_data(now)
+
+            tomorrow_data = None
+            if should_fetch_tomorrow:
+                tomorrow = now + timedelta(days=1)
+                _LOGGER.info(f"📡 Attempting to fetch tomorrow's data ({tomorrow.date()} - {tomorrow.strftime('%A')}) at {now.strftime('%H:%M:%S')}")
+                tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
+
+                # Update tomorrow data status
+                if tomorrow_data:
+                    if not self.tomorrow_data_available:
+                        _LOGGER.info(f"✅ Tomorrow's data ({tomorrow.strftime('%A')}) became available at {now.strftime('%H:%M:%S')}")
+                    self.tomorrow_data_available = True
+                    self.last_tomorrow_check = now
+                else:
+                    if now.hour >= 14:  # Only log if we expect data to be available
+                        _LOGGER.info(f"📅 Tomorrow's data ({tomorrow.strftime('%A')}) not yet available at {now.strftime('%H:%M:%S')}")
+                    self.tomorrow_data_available = False
+            else:
+                _LOGGER.debug("⏭️ Skipping tomorrow's data fetch (outside publication hours)")
+
+            tomorrow = now + timedelta(days=1)
+            result = {
+                "today": today_data,
+                "tomorrow": tomorrow_data,
+                "last_update": now,
+                "startup_fetch": False,
+                "tomorrow_data_status": {
+                    "available": self.tomorrow_data_available,
+                    "last_check": self.last_tomorrow_check,
+                    "expected_time": "14:00-15:30 DAILY (including weekends)",
+                    "force_fetched": False,
+                    "tomorrow_day": tomorrow.strftime('%A')
                 }
             }
 
             # Log summary
             today_status = "✅ Available" if today_data else "❌ Not available"
             tomorrow_status = "✅ Available" if tomorrow_data else "❌ Not available"
-            _LOGGER.info(f"Data update complete: Today {today_status}, Tomorrow {tomorrow_status}")
+            _LOGGER.info(f"✅ Regular update complete: Today {today_status}, Tomorrow {tomorrow_status}")
 
             return result
 
         except Exception as err:
-            _LOGGER.error(f"Error in data update: {err}")
+            _LOGGER.error(f"❌ Error in regular update: {err}")
             raise UpdateFailed(f"Error communicating with TGE API: {err}")
 
     def _should_fetch_tomorrow_data(self, now: datetime) -> bool:
-        """Determine if we should fetch tomorrow's data based on time and status."""
+        """Determine if we should fetch tomorrow's data - EVERY DAY including weekends."""
         current_time = now.time()
 
         # Before 13:30 - don't check (too early)
@@ -213,11 +300,11 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         if current_time > time(18, 0):
             return not self.tomorrow_data_available
 
-        # 13:30-18:00 - always check during publication window
+        # 13:30-18:00 - ALWAYS check during publication window (EVERY DAY)
         return True
 
     async def _fetch_day_data(self, date: datetime, day_type: str) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific day with enhanced logging."""
+        """Fetch data for specific day - EVERY DAY including weekends."""
         try:
             url = TGE_URL_PATTERN.format(
                 year=date.year,
@@ -225,14 +312,14 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 day=date.day
             )
 
-            _LOGGER.debug(f"Fetching {day_type} data from URL: {url}")
+            _LOGGER.debug(f"🌐 Fetching {day_type} data ({date.strftime('%A')}) from URL: {url}")
 
             response = await self.hass.async_add_executor_job(
                 self._download_file, url
             )
 
             if response is None:
-                _LOGGER.debug(f"No HTTP response for {day_type} ({date.date()})")
+                _LOGGER.debug(f"🚫 No HTTP response for {day_type} ({date.date()} - {date.strftime('%A')})")
                 return None
 
             result = await self.hass.async_add_executor_job(
@@ -242,31 +329,28 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             if result:
                 hours_count = len(result.get("hourly_data", []))
                 avg_price = result.get("average_price", 0)
-                _LOGGER.info(f"✅ {day_type.title()} data loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh")
+                _LOGGER.info(f"✅ {day_type.title()} data ({date.strftime('%A')}) loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh")
 
             return result
 
         except DataNotAvailableError as dna:
-            # This is expected when TGE hasn't published data yet
-            if day_type == "tomorrow":
-                _LOGGER.debug(f"Tomorrow's TGE data not yet published: {dna}")
-            else:
-                _LOGGER.info(f"TGE data not yet available for {day_type}: {dna}")
+            # This can happen any day if TGE hasn't published data yet
+            _LOGGER.info(f"📅 {day_type.title()} data ({date.strftime('%A')}) not published yet: {dna}")
             return None
         except Exception as err:
-            _LOGGER.error(f"Unexpected error fetching {day_type} data: {err}")
+            _LOGGER.error(f"❌ Unexpected error fetching {day_type} data ({date.strftime('%A')}): {err}")
             return None
 
     def _download_file(self, url: str) -> Optional[bytes]:
         """Download Excel file with timeout handling."""
         try:
-            _LOGGER.debug(f"HTTP GET: {url}")
+            _LOGGER.debug(f"🌐 HTTP GET: {url}")
             response = requests.get(url, timeout=30)
-            _LOGGER.debug(f"HTTP response: {response.status_code}, {len(response.content)} bytes")
+            _LOGGER.debug(f"📊 HTTP response: {response.status_code}, {len(response.content)} bytes")
             response.raise_for_status()
             return response.content
         except requests.RequestException as err:
-            _LOGGER.debug(f"HTTP request failed: {err}")
+            _LOGGER.debug(f"🚫 HTTP request failed: {err}")
             return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
@@ -355,7 +439,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
         except Exception as err:
             # Real parsing errors (this shouldn't happen with valid Excel files)
-            _LOGGER.error(f"Unexpected error parsing Excel data for {date.date()}: {err}")
+            _LOGGER.error(f"❌ Unexpected error parsing Excel data for {date.date()}: {err}")
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
@@ -552,7 +636,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes with ENHANCED TOMORROW INFO."""
+        """Return extra state attributes - WEEKEND FIXED."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             return {"error": "Required libraries not available"}
 
@@ -584,6 +668,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
         tomorrow_data = data.get("tomorrow")
         tomorrow_status = data.get("tomorrow_data_status", {})
+        startup_fetch = data.get("startup_fetch", False)
 
         attributes = {
             "last_update": data.get("last_update"),
@@ -591,13 +676,17 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             "unit_converted": self._unit,
             "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
             "pricing_formula": "(TGE_price × (1 + VAT)) + exchange_fee + distribution_rate",
+            "startup_immediate_fetch": startup_fetch,
+            "tge_publishes_daily": "TGE publishes data EVERY DAY including weekends",
             "data_status": {
                 "today_available": today_data is not None,
                 "tomorrow_available": tomorrow_data is not None,
                 "today_hours": len(today_data.get("hourly_data", [])) if today_data else 0,
                 "tomorrow_hours": len(tomorrow_data.get("hourly_data", [])) if tomorrow_data else 0,
-                "tomorrow_expected_time": tomorrow_status.get("expected_time", "14:00-15:30"),
+                "tomorrow_expected_time": tomorrow_status.get("expected_time", "14:00-15:30 DAILY (including weekends)"),
                 "tomorrow_last_check": tomorrow_status.get("last_check"),
+                "tomorrow_force_fetched": tomorrow_status.get("force_fetched", False),
+                "tomorrow_day": tomorrow_status.get("tomorrow_day", "Unknown"),
             },
             "components": {
                 "base_energy_pln_mwh": base_price,
