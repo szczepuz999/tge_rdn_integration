@@ -1,114 +1,83 @@
-# TGE RDN Integration for Home Assistant
+# TGE RDN Energy Prices Integration v1.0.7
 
-Integracja Home Assistant do pobierania cen energii elektrycznej z Rynku Dnia Następnego (RDN) TGE z pełnym naliczaniem VAT, opłat giełdowych i dystrybucyjnych.
+[![GitHub Release](https://img.shields.io/github/release/szczepuz999/tge_rdn_integration.svg?style=flat-square)](https://github.com/szczepuz999/tge_rdn_integration/releases)
+[![GitHub](https://img.shields.io/github/license/szczepuz999/tge_rdn_integration.svg?style=flat-square)](LICENSE)
 
-## 🧮 Wzór obliczania ceny końcowej
+Integracja Home Assistant do pobierania cen energii z TGE RDN (Towarowa Giełda Energii - Rynek Dnia Następnego).
 
-```
-total_gross = (cena_TGE × (1 + VAT)) + exchange_fee + distribution_rate
-```
+## ✅ Wersja 1.0.7 - Co nowego:
 
-**VAT naliczany jest tylko od ceny TGE**, a opłaty giełdowe i dystrybucyjne dodawane są bez VAT.
-
-## 📊 Ceny brutto w atrybutach
-
-**NOWOŚĆ:** Wszystkie ceny w atrybutach są teraz obliczone z pełnym naliczaniem VAT, opłat i dystrybucji!
-
-### Dostępne atrybuty:
-
-#### Ceny oryginalne (TGE netto):
-- `prices_today` - bazowe ceny TGE na dziś
-- `prices_tomorrow` - bazowe ceny TGE na jutro
-- `today_average/min/max` - statystyki TGE
-
-#### Ceny brutto (z VAT + opłaty):
-- `prices_today_gross` - kompletne ceny brutto na dziś
-- `prices_tomorrow_gross` - kompletne ceny brutto na jutro  
-- `today_average_gross/min_gross/max_gross` - statystyki brutto
-- `tomorrow_average_gross/min_gross/max_gross` - statystyki brutto
-
-### Struktura ceny brutto:
-
-```yaml
-prices_today_gross: [
-  {
-    "time": "2025-10-01T19:00:00",
-    "hour": 20,
-    "price_tge_net": 450.0,           # Oryginalna cena TGE
-    "price_gross": 0.706,             # Cena brutto w wybranej jednostce
-    "price_gross_pln_mwh": 705.5      # Cena brutto w PLN/MWh
-  }
-]
-```
-
-## ⚡ Strefy taryfowe dystrybucji
-
-### Okres letni (kwiecień-wrzesień):
-- **07:00–13:00**: Szczyt przedpołudniowy
-- **19:00–22:00**: Szczyt popołudniowy
-- **13:00–19:00 i 22:00–07:00**: Pozostałe godziny
-
-### Okres zimowy (październik-marzec):
-- **07:00–13:00**: Szczyt przedpołudniowy  
-- **16:00–21:00**: Szczyt popołudniowy
-- **13:00–16:00 i 21:00–07:00**: Pozostałe godziny
-
-## 🔧 Konfiguracja
-
-W opcjach integracji ustaw:
-- **Opłata giełdowa [PLN/MWh]**: np. 2.0
-- **Stawka VAT**: np. 0.23 (23%)
-- **3 stawki dystrybucji**: pozostałe/przedpołudnie/popołudnie [PLN/MWh]
-
-## 📈 Przykład karty ApexCharts z cenami brutto
-
-```yaml
-type: custom:apexcharts-card
-graph_span: 24h
-header:
-  title: "TGE RDN - Ceny energii brutto"
-series:
-  - entity: sensor.tge_rdn_current_price
-    name: "Cena brutto"
-    type: column
-    data_generator: |
-      return entity.attributes.prices_today_gross.map((item) => {
-        return [new Date(item.time).getTime(), item.price_gross];
-      });
-```
+- 🔧 **NAPRAWIONO URL TGE** - teraz pobiera dane z `Wyniki%2015` zamiast `SDAC 2025`
+- ❌ **USUNIĘTO TEMPLATE** - prostsze konfigurowanie, brak problemów z Jinja2
+- 🏷️ **GITHUB INFO** - poprawne linki do @szczepuz999/tge_rdn_integration
+- 📊 **CENY BRUTTO** - VAT + opłaty giełdowe + dystrybucja
 
 ## 🚀 Instalacja
 
-1. Skopiuj `custom_components/tge_rdn` do `/config/custom_components/`
-2. Restart Home Assistant (automatyczna instalacja bibliotek)
-3. Dodaj integrację: Konfiguracja → Integracje → + → "TGE RDN"
-4. Skonfiguruj stawki w Opcjach
+1. Skopiuj folder `custom_components/tge_rdn/` do `/config/custom_components/`
+2. Uruchom ponownie Home Assistant
+3. Dodaj integrację: **Configuration** → **Integrations** → **+ Add Integration** → **"TGE RDN"**
+4. Skonfiguruj stawki w opcjach integracji
+
+## ⚙️ Konfiguracja
+
+### Jednostki cen:
+- **PLN/MWh** - Cena w złotych za megawatogodzinę
+- **PLN/kWh** - Cena w złotych za kilowatogodzinę (zalecane)
+- **EUR/MWh** - Cena w euro za megawatogodzinę
+- **EUR/kWh** - Cena w euro za kilowatogodzinę
+
+### Opłaty i podatki:
+- **Opłata giełdowa** [PLN/MWh] - np. 2.0
+- **Stawka VAT** - np. 0.23 dla 23%
+- **Dystrybucja pozostałe godziny** [PLN/MWh] - taryfa poza szczytem
+- **Dystrybucja szczyt przedpołudniowy** [PLN/MWh] - 7:00-13:00
+- **Dystrybucja szczyt popołudniowy** [PLN/MWh] - 16:00-21:00 (zima) / 19:00-22:00 (lato)
 
 ## 📊 Sensory
 
-- `sensor.tge_rdn_current_price` - Cena brutto bieżąca
-- `sensor.tge_rdn_next_hour_price` - Cena brutto następnej godziny
-- `sensor.tge_rdn_daily_average` - Średnia cena brutto dzienna
+Po instalacji otrzymasz 3 sensory:
 
-## 🔍 Rozbicie kosztów
+- `sensor.tge_rdn_current_price` - Aktualna cena brutto
+- `sensor.tge_rdn_next_hour_price` - Cena następnej godziny brutto  
+- `sensor.tge_rdn_daily_average` - Średnia dzienna cena brutto
 
-Każdy sensor zawiera szczegółowy rozkład w `components`:
+## 🧮 Wzór kalkulacji
 
-```yaml
-components:
-  base_energy_pln_mwh: 450.0           # TGE netto
-  tge_with_vat_pln_mwh: 553.5          # TGE + VAT
-  exchange_fee_pln_mwh: 2.0            # Opłata giełdowa
-  distribution_pln_mwh: 150.0          # Dystrybucja
-  vat_rate: 0.23                       # VAT 23%
-  total_gross_pln_mwh: 705.5           # Cena końcowa
+```
+Cena_brutto = (Cena_TGE × (1 + VAT)) + Opłata_giełdowa + Dystrybucja
 ```
 
-## 💡 Korzyści nowego wzoru
+**Przykład:**
+- Cena TGE: 350 PLN/MWh
+- VAT 23%: 350 × 1.23 = 430.5 PLN/MWh
+- Opłata giełdowa: 2 PLN/MWh
+- Dystrybucja (szczyt): 120 PLN/MWh
+- **Suma brutto: 552.5 PLN/MWh (0.553 PLN/kWh)**
 
-- VAT tylko od energii TGE (~5% taniej niż poprzedni wzór)
-- Ceny brutto w atrybutach gotowe do wykresów
-- Pełna transparentność kosztów
-- Automatyczne przełączanie stref taryfowych
+## 📈 Atrybuty dla wykresów
 
-**Wszystkie ceny w atrybutach zawierają już pełne naliczenia zgodnie z wzorem!**
+Każdy sensor zawiera atrybuty z pełnymi danymi:
+
+```yaml
+prices_today_gross:
+  - time: "2025-10-03T10:00:00"
+    hour: 11
+    price_tge_net: 350.0
+    price_gross: 0.553
+    price_gross_pln_mwh: 552.5
+```
+
+## 🕐 Harmonogram aktualizacji
+
+- **Dziś**: Dane dostępne po ~11:05
+- **Jutro**: Dane dostępne po ~13:20  
+- **Weekendy**: Brak danych (normalne)
+
+## 📄 Licencja
+
+MIT License - zobacz plik LICENSE
+
+## 🐛 Zgłaszanie problemów
+
+https://github.com/szczepuz999/tge_rdn_integration/issues

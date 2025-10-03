@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - CORRECTED TGE URL."""
+"""TGE RDN sensor platform - NO TEMPLATE VERSION."""
 import logging
 import asyncio
 import io
@@ -27,7 +27,6 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
-from homeassistant.helpers.template import Template
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -39,9 +38,7 @@ from .const import (
     UNIT_EUR_MWH,
     UNIT_EUR_KWH,
     CONF_UNIT,
-    CONF_TEMPLATE,
     DEFAULT_UNIT,
-    DEFAULT_TEMPLATE,
     UPDATE_INTERVAL_CURRENT,
     UPDATE_INTERVAL_NEXT_DAY,
     CONF_EXCHANGE_FEE,
@@ -291,7 +288,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor."""
+    """TGE RDN sensor without template functionality."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -304,7 +301,6 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         # Configuration from entry
         self._unit = entry.options.get(CONF_UNIT, DEFAULT_UNIT)
-        self._template_str = entry.options.get(CONF_TEMPLATE, DEFAULT_TEMPLATE)
 
         # Fees/tariffs and VAT (PLN/MWh)
         self._exchange_fee = entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
@@ -312,15 +308,6 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._dist_low = entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
         self._dist_med = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
         self._dist_high = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
-
-        # Template creation with proper hass reference
-        self._template = None
-        if self._template_str != DEFAULT_TEMPLATE:
-            try:
-                self._template = Template(self._template_str, coordinator.hass)
-            except Exception as err:
-                _LOGGER.error(f"Error creating template '{self._template_str}': {err}")
-                self._template = None
 
     @property
     def available(self) -> bool:
@@ -402,24 +389,6 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         try:
             value = self._calculate_value()
-
-            if value is None:
-                return None
-
-            # Template application with proper render method
-            if self._template:
-                try:
-                    template_variables = {
-                        'value': value,
-                        'now': datetime.now(),
-                        'this': self
-                    }
-                    result = self._template.render(template_variables)
-                    return float(result)
-                except Exception as err:
-                    _LOGGER.error(f"Error applying template '{self._template_str}': {err}")
-                    return value
-
             return value
 
         except Exception as err:
@@ -550,8 +519,6 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             "unit_converted": self._unit,
             "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
             "pricing_formula": "(TGE_price × (1 + VAT)) + exchange_fee + distribution_rate",
-            "template_status": "active" if self._template else "inactive",
-            "template_string": self._template_str if self._template_str != DEFAULT_TEMPLATE else None,
             "data_status": {
                 "today_available": today_data is not None,
                 "tomorrow_available": tomorrow_data is not None,

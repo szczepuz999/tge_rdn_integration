@@ -18,11 +18,9 @@ UNIT_EUR_KWH = "EUR/kWh"
 
 # Configuration
 CONF_UNIT = "unit"
-CONF_TEMPLATE = "template"
 
 # Defaults
 DEFAULT_UNIT = UNIT_PLN_MWH
-DEFAULT_TEMPLATE = "{{ value }}"
 
 # Fees and taxes
 CONF_EXCHANGE_FEE = "exchange_fee_pln_mwh"  # PLN/MWh

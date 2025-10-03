@@ -22,10 +22,9 @@
     "step": {
       "init": {
         "title": "Opcje TGE RDN",
-        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\n✅ URL TGE NAPRAWIONY - teraz pobiera dane z 'Wyniki 15'!\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
+        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\n✅ URL TGE NAPRAWIONY - teraz pobiera dane z 'Wyniki 15'!\\n✅ USUNIĘTO TEMPLATE - prostsze ustawienia!\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
         "data": {
           "unit": "Jednostka ceny",
-          "template": "Template Jinja2 (opcjonalny)",
           "exchange_fee_pln_mwh": "Opłata giełdowa [PLN/MWh]",
           "vat_rate": "Stawka VAT (np. 0.23 dla 23%)",
           "distribution_low_pln_mwh": "Dystrybucja - pozostałe godziny [PLN/MWh]",

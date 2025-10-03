@@ -17,9 +17,7 @@ from .const import (
     UNIT_EUR_MWH,
     UNIT_EUR_KWH,
     CONF_UNIT,
-    CONF_TEMPLATE,
     DEFAULT_UNIT,
-    DEFAULT_TEMPLATE,
     CONF_EXCHANGE_FEE,
     CONF_VAT_RATE,
     CONF_DIST_LOW,
@@ -116,10 +114,6 @@ class TGERDNOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_UNIT,
                     default=self.config_entry.options.get(CONF_UNIT, DEFAULT_UNIT)
                 ): vol.In(UNIT_OPTIONS),
-                vol.Optional(
-                    CONF_TEMPLATE,
-                    default=self.config_entry.options.get(CONF_TEMPLATE, DEFAULT_TEMPLATE)
-                ): str,
                 vol.Optional(
                     CONF_EXCHANGE_FEE,
                     default=self.config_entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
