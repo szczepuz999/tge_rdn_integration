@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - FIXED TOMORROW DATA ISSUE."""
+"""TGE RDN sensor platform - FIXED TOMORROW DATA PRESERVATION."""
 import logging
 import asyncio
 import io
@@ -106,7 +106,7 @@ async def async_setup_entry(
         _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data."""
+    """Class to manage fetching TGE RDN data - FIXED TOMORROW DATA PRESERVATION."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize."""
@@ -184,7 +184,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         await super().async_config_entry_first_refresh()
 
     async def _force_fetch_both_days(self) -> Dict[str, Any]:
-        """Force fetch both today and tomorrow data immediately - EVERY DAY including weekends."""
+        """Force fetch both today and tomorrow data immediately."""
         now = datetime.now()
         _LOGGER.info(f"🚀 FORCE FETCH: Getting both today and tomorrow data (TGE publishes DAILY including {now.strftime('%A')})")
 
@@ -204,7 +204,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 self.tomorrow_data_available = True
                 self.last_tomorrow_check = now
             else:
-                _LOGGER.info(f"📅 FORCE FETCH: Tomorrow's data ({tomorrow.strftime('%A')}) not available yet - TGE may not have published it")
+                _LOGGER.info(f"📅 FORCE FETCH: Tomorrow's data ({tomorrow.strftime('%A')}) not available yet")
                 self.tomorrow_data_available = False
 
             result = {
@@ -228,7 +228,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             return {}
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from TGE - DAILY INCLUDING WEEKENDS."""
+        """Fetch data from TGE - PRESERVE EXISTING TOMORROW DATA."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             raise UpdateFailed(f"Required libraries not available: {IMPORT_ERROR}")
 
@@ -240,27 +240,8 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("📡 Fetching today's data")
             today_data = await self._fetch_day_data(now, "today")
 
-            # Determine if we should fetch tomorrow's data - EVERY DAY
-            should_fetch_tomorrow = self._should_fetch_tomorrow_data(now)
-
-            tomorrow_data = None
-            if should_fetch_tomorrow:
-                tomorrow = now + timedelta(days=1)
-                _LOGGER.info(f"📡 Attempting to fetch tomorrow's data ({tomorrow.date()} - {tomorrow.strftime('%A')}) at {now.strftime('%H:%M:%S')}")
-                tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
-
-                # Update tomorrow data status
-                if tomorrow_data:
-                    if not self.tomorrow_data_available:
-                        _LOGGER.info(f"✅ Tomorrow's data ({tomorrow.strftime('%A')}) became available at {now.strftime('%H:%M:%S')}")
-                    self.tomorrow_data_available = True
-                    self.last_tomorrow_check = now
-                else:
-                    if now.hour >= 14:  # Only log if we expect data to be available
-                        _LOGGER.info(f"📅 Tomorrow's data ({tomorrow.strftime('%A')}) not yet available at {now.strftime('%H:%M:%S')}")
-                    self.tomorrow_data_available = False
-            else:
-                _LOGGER.debug("⏭️ Skipping tomorrow's data fetch (outside publication hours)")
+            # Handle tomorrow data - PRESERVE EXISTING OR FETCH NEW
+            tomorrow_data = await self._handle_tomorrow_data(now)
 
             tomorrow = now + timedelta(days=1)
             result = {
@@ -269,7 +250,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "last_update": now,
                 "startup_fetch": False,
                 "tomorrow_data_status": {
-                    "available": self.tomorrow_data_available,
+                    "available": tomorrow_data is not None,
                     "last_check": self.last_tomorrow_check,
                     "expected_time": "14:00-15:30 DAILY (including weekends)",
                     "force_fetched": False,
@@ -288,23 +269,65 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"❌ Error in regular update: {err}")
             raise UpdateFailed(f"Error communicating with TGE API: {err}")
 
+    async def _handle_tomorrow_data(self, now: datetime) -> Optional[Dict[str, Any]]:
+        """Handle tomorrow data - preserve existing or fetch new - FIXED LOGIC."""
+
+        # Check if we should try to fetch new tomorrow data
+        should_fetch_tomorrow = self._should_fetch_tomorrow_data(now)
+
+        if should_fetch_tomorrow:
+            # Try to fetch new tomorrow data
+            tomorrow = now + timedelta(days=1)
+            _LOGGER.info(f"📡 Attempting to fetch tomorrow's data ({tomorrow.date()} - {tomorrow.strftime('%A')}) at {now.strftime('%H:%M:%S')}")
+
+            new_tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
+
+            if new_tomorrow_data:
+                if not self.tomorrow_data_available:
+                    _LOGGER.info(f"✅ Tomorrow's data ({tomorrow.strftime('%A')}) became available at {now.strftime('%H:%M:%S')}")
+                self.tomorrow_data_available = True
+                self.last_tomorrow_check = now
+                return new_tomorrow_data
+            else:
+                # Failed to fetch - preserve existing if we have it
+                if self.data and self.data.get("tomorrow"):
+                    _LOGGER.debug(f"📅 Failed to fetch new tomorrow data, preserving existing")
+                    return self.data.get("tomorrow")
+                else:
+                    if now.hour >= 14:  # Only log if we expect data to be available
+                        _LOGGER.info(f"📅 Tomorrow's data ({tomorrow.strftime('%A')}) not yet available at {now.strftime('%H:%M:%S')}")
+                    self.tomorrow_data_available = False
+                    return None
+        else:
+            # Not fetching new data - preserve existing if we have it
+            if self.data and self.data.get("tomorrow"):
+                _LOGGER.debug("📅 Preserving existing tomorrow data (outside fetch window)")
+                return self.data.get("tomorrow")
+            else:
+                _LOGGER.debug("⏭️ Skipping tomorrow's data fetch (outside publication hours)")
+                return None
+
     def _should_fetch_tomorrow_data(self, now: datetime) -> bool:
-        """Determine if we should fetch tomorrow's data - EVERY DAY including weekends."""
+        """Determine if we should fetch tomorrow's data - FIXED TIME LOGIC."""
         current_time = now.time()
 
-        # Before 13:30 - don't check (too early)
+        # Before 13:30 - don't fetch (too early)
         if current_time < time(13, 30):
             return False
 
-        # After 18:00 - only if we don't have data yet
-        if current_time > time(18, 0):
+        # 13:30-18:00 - ACTIVE FETCH WINDOW - always try
+        if time(13, 30) <= current_time <= time(18, 0):
+            return True
+
+        # 18:00-22:00 - EXTENDED WINDOW - only if we don't have data yet  
+        if time(18, 0) < current_time < time(22, 0):
             return not self.tomorrow_data_available
 
-        # 13:30-18:00 - ALWAYS check during publication window (EVERY DAY)
-        return True
+        # After 22:00 - too late, don't fetch
+        return False
 
     async def _fetch_day_data(self, date: datetime, day_type: str) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific day - EVERY DAY including weekends."""
+        """Fetch data for specific day."""
         try:
             url = TGE_URL_PATTERN.format(
                 year=date.year,
@@ -339,7 +362,6 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             return result
 
         except DataNotAvailableError as dna:
-            # This can happen any day if TGE hasn't published data yet
             _LOGGER.info(f"📅 {day_type.title()} data ({date.strftime('%A')}) not published yet: {dna}")
             return None
         except Exception as err:
@@ -359,7 +381,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel data from TGE RDN file with proper validation - FIXED NEGATIVE PRICES."""
+        """Parse Excel data from TGE RDN file with proper validation."""
 
         def validate_excel_file(content: bytes) -> None:
             """Validate if content is a valid Excel file."""
@@ -404,7 +426,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 if pd.notna(time_value) and isinstance(time_value, str):
                     # Format: "01-10-25_H01"  
                     if re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}', str(time_value)):
-                        # FIXED: Accept any numeric price value (including negative and zero)
+                        # Accept any numeric price value (including negative and zero)
                         if pd.notna(price_value) and isinstance(price_value, (int, float)):
                             hour = int(time_value.split('_H')[1])
                             price = float(price_value)
