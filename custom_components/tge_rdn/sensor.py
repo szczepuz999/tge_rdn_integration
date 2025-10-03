@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - NEGATIVE PRICES HANDLING FOR PROSUMERS."""
+"""TGE RDN sensor platform - FIXED TOMORROW DATA ISSUE."""
 import logging
 import asyncio
 import io
@@ -106,7 +106,7 @@ async def async_setup_entry(
         _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data - WEEKEND FIXED."""
+    """Class to manage fetching TGE RDN data."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize."""
@@ -127,7 +127,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         )
 
     def _get_update_interval(self) -> int:
-        """Get update interval based on current time - NO WEEKEND DISCRIMINATION."""
+        """Get update interval based on current time."""
         now = datetime.now()
         current_time = now.time()
 
@@ -145,7 +145,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
 
         # 14:00-16:00: Tomorrow's data publication window - CHECK FREQUENTLY EVERY DAY
         elif time(14, 0) <= current_time <= time(16, 0):
-            _LOGGER.debug("Afternoon window - tomorrow's data publication time (DAILY - including weekends!)")
+            _LOGGER.debug("Afternoon window - tomorrow's data publication time (DAILY)")
             return UPDATE_INTERVAL_NEXT_DAY  # 10 minutes
 
         # 13:30-14:00: Pre-check for tomorrow data EVERY DAY
@@ -359,7 +359,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel data from TGE RDN file with proper validation."""
+        """Parse Excel data from TGE RDN file with proper validation - FIXED NEGATIVE PRICES."""
 
         def validate_excel_file(content: bytes) -> None:
             """Validate if content is a valid Excel file."""
@@ -404,6 +404,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 if pd.notna(time_value) and isinstance(time_value, str):
                     # Format: "01-10-25_H01"  
                     if re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}', str(time_value)):
+                        # FIXED: Accept any numeric price value (including negative and zero)
                         if pd.notna(price_value) and isinstance(price_value, (int, float)):
                             hour = int(time_value.split('_H')[1])
                             price = float(price_value)
@@ -424,7 +425,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                             hourly_data.append({
                                 'time': hour_datetime.isoformat(),
                                 'hour': hour,
-                                'price': price,  # Keep original price (including negative)
+                                'price': price,  # Keep original price (including negative and zero)
                                 'is_negative': price < 0
                             })
 
