@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "TGE RDN - Konfiguracja",
-        "description": "Skonfiguruj integrację TGE RDN do pobierania cen energii elektrycznej.\\n\\nWymagane biblioteki: {required_libraries}",
+        "description": "Skonfiguruj integrację TGE RDN do pobierania cen energii elektrycznej.\\n\\n✅ NAPRAWIONO URL TGE!\\n\\nWymagane biblioteki: {required_libraries}",
         "data": {
           "name": "Nazwa integracji"
         }
@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "Opcje TGE RDN",
-        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\n✅ NAPRAWIONO wszystkie błędy Template, Excel i importów!\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
+        "description": "Skonfiguruj opcje wyświetlania cen i dodatkowe opłaty.\\n\\n✅ URL TGE NAPRAWIONY - teraz pobiera dane z 'Wyniki 15'!\\n\\nWzór: (Cena TGE × (1 + VAT)) + Opłata giełdowa + Dystrybucja",
         "data": {
           "unit": "Jednostka ceny",
           "template": "Template Jinja2 (opcjonalny)",

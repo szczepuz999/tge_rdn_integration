@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - IMPROVED file validation."""
+"""TGE RDN sensor platform - CORRECTED TGE URL."""
 import logging
 import asyncio
 import io
@@ -57,6 +57,10 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+class DataNotAvailableError(Exception):
+    """Custom exception for when TGE data is not yet available."""
+    pass
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -148,7 +152,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Error communicating with TGE API: {err}")
 
     async def _fetch_day_data(self, date: datetime) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific day with improved error handling."""
+        """Fetch data for specific day with proper exception handling."""
         try:
             url = TGE_URL_PATTERN.format(
                 year=date.year,
@@ -156,26 +160,26 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 day=date.day
             )
 
-            _LOGGER.debug(f"Fetching data from: {url}")
+            _LOGGER.debug(f"Fetching data from corrected URL: {url}")
 
             response = await self.hass.async_add_executor_job(
                 self._download_file, url
             )
 
             if response is None:
-                _LOGGER.info(f"No HTTP response for {date.date()}")
+                _LOGGER.debug(f"No HTTP response for {date.date()}")
                 return None
 
             return await self.hass.async_add_executor_job(
                 self._parse_excel_data, response, date
             )
 
-        except ValueError as ve:
-            # This is our custom validation error - data not available (normal)
-            _LOGGER.info(f"Data not yet available for {date.date()}: {ve}")
+        except DataNotAvailableError as dna:
+            # This is expected when TGE hasn't published data yet
+            _LOGGER.info(f"TGE data not yet available for {date.date()}: {dna}")
             return None
         except Exception as err:
-            _LOGGER.error(f"Error fetching data for {date.date()}: {err}")
+            _LOGGER.error(f"Unexpected error fetching data for {date.date()}: {err}")
             return None
 
     def _download_file(self, url: str) -> Optional[bytes]:
@@ -185,50 +189,46 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             response.raise_for_status()
             return response.content
         except requests.RequestException as err:
-            _LOGGER.info(f"Error downloading file: {err}")
+            _LOGGER.debug(f"Download failed: {err}")
             return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel data from TGE RDN file - IMPROVED validation."""
+        """Parse Excel data from TGE RDN file with proper validation."""
+
+        def validate_excel_file(content: bytes) -> None:
+            """Validate if content is a valid Excel file."""
+            if len(content) < 100:
+                raise DataNotAvailableError(f"File too small ({len(content)} bytes)")
+
+            # Check for HTML content (various ways)
+            content_lower = content[:1000].lower()
+            html_indicators = [b'<html', b'<!doctype', b'<head>', b'<body>', b'<title>', b'<meta', b'<div', b'<p>']
+            for indicator in html_indicators:
+                if indicator in content_lower:
+                    # Log preview for debugging (safely decoded)
+                    try:
+                        preview = content[:200].decode('utf-8', errors='replace')
+                    except:
+                        preview = str(content[:200])
+
+                    _LOGGER.debug(f"HTML content detected for {date.date()}: {preview}")
+                    raise DataNotAvailableError(f"Server returned HTML instead of Excel (contains {indicator.decode()})")
+
+            # Check for ZIP signature (Excel files are ZIP archives)
+            if not content.startswith(b'PK'):
+                raise DataNotAvailableError(f"File doesn't have Excel format (starts with: {content[:10]})")
+
+            # Check for error indicators
+            error_indicators = [b'404', b'not found', b'error', b'exception', b'access denied', b'forbidden']
+            for indicator in error_indicators:
+                if indicator in content_lower:
+                    raise DataNotAvailableError(f"Server returned error page (contains '{indicator.decode()}')")
+
         try:
-            # IMPROVED: Better validation for Excel vs HTML
-            def is_valid_excel_file(content: bytes) -> tuple[bool, str]:
-                """Check if content is a valid Excel file."""
-                if len(content) < 100:
-                    return False, f"File too small ({len(content)} bytes)"
-
-                # Check for HTML content (various ways)
-                content_lower = content[:1000].lower()  # Check more content
-                html_indicators = [b'<html', b'<!doctype', b'<head>', b'<body>', b'<title>', b'<meta', b'<div', b'<p>']
-                for indicator in html_indicators:
-                    if indicator in content_lower:
-                        return False, f"File contains HTML content (found {indicator.decode()})"
-
-                # Check for ZIP signature (Excel files are ZIP archives)
-                if not content.startswith(b'PK'):
-                    return False, f"File doesn't start with ZIP signature (starts with: {content[:10]})"
-
-                # Additional check for common error pages
-                error_indicators = [b'404', b'not found', b'error', b'exception', b'access denied', b'forbidden']
-                for indicator in error_indicators:
-                    if indicator in content_lower:
-                        return False, f"File appears to be an error page (contains '{indicator.decode()}')"
-
-                return True, "Valid Excel file"
-
             # Validate file before processing
-            is_valid, reason = is_valid_excel_file(file_content)
-            if not is_valid:
-                # Log preview for debugging (first 200 chars, safely decoded)
-                try:
-                    preview = file_content[:200].decode('utf-8', errors='replace')
-                except:
-                    preview = str(file_content[:200])
+            validate_excel_file(file_content)
 
-                _LOGGER.debug(f"File content preview for {date.date()}: {preview}")
-                raise ValueError(f"Invalid Excel file: {reason}")
-
-            # Use BytesIO and specify engine to avoid deprecation warning
+            # Use BytesIO and specify engine
             excel_file = io.BytesIO(file_content)
             df = pd.read_excel(excel_file, sheet_name="WYNIKI", header=None, engine="openpyxl")
 
@@ -238,8 +238,8 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             price_column = 10 # Column K
 
             for index, row in df.iterrows():
-                time_value = row[time_column]
-                price_value = row[price_column]
+                time_value = row[time_column] if len(row) > time_column else None
+                price_value = row[price_column] if len(row) > price_column else None
 
                 if pd.notna(time_value) and isinstance(time_value, str):
                     # Format: "01-10-25_H01"  
@@ -265,13 +265,13 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             hourly_data.sort(key=lambda x: x['hour'])
 
             if not hourly_data:
-                raise ValueError("No valid price data found in Excel file")
+                raise DataNotAvailableError("Excel file contains no valid price data")
 
             # Calculate statistics
             prices = [item['price'] for item in hourly_data]
             average_price = sum(prices) / len(prices) if prices else 0
 
-            _LOGGER.info(f"Successfully parsed {len(hourly_data)} hours of data for {date.date()}")
+            _LOGGER.info(f"Successfully parsed {len(hourly_data)} hours of TGE data for {date.date()}")
 
             return {
                 "date": date.date().isoformat(),
@@ -282,8 +282,12 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "total_hours": len(hourly_data)
             }
 
+        except DataNotAvailableError:
+            # Re-raise custom exception to be handled in _fetch_day_data
+            raise
         except Exception as err:
-            _LOGGER.error(f"Error parsing Excel data: {err}")
+            # Real parsing errors (this shouldn't happen with valid Excel files)
+            _LOGGER.error(f"Unexpected error parsing Excel data for {date.date()}: {err}")
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
