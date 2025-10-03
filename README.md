@@ -1,21 +1,31 @@
-# TGE RDN Energy Prices Integration v1.0.7
+# TGE RDN Energy Prices Integration v1.0.8
 
 [![GitHub Release](https://img.shields.io/github/release/szczepuz999/tge_rdn_integration.svg?style=flat-square)](https://github.com/szczepuz999/tge_rdn_integration/releases)
 [![GitHub](https://img.shields.io/github/license/szczepuz999/tge_rdn_integration.svg?style=flat-square)](LICENSE)
 
 Integracja Home Assistant do pobierania cen energii z TGE RDN (Towarowa Giełda Energii - Rynek Dnia Następnego).
 
-## ✅ Wersja 1.0.7 - Co nowego:
+## ✅ Wersja 1.0.8 - Co nowego:
 
-- 🔧 **NAPRAWIONO URL TGE** - teraz pobiera dane z `Wyniki%2015` zamiast `SDAC 2025`
-- ❌ **USUNIĘTO TEMPLATE** - prostsze konfigurowanie, brak problemów z Jinja2
-- 🏷️ **GITHUB INFO** - poprawne linki do @szczepuz999/tge_rdn_integration
+- 🔧 **NAPRAWIONO URL TGE** - teraz pobiera dane z `Wyniki%2015`
+- ❌ **USUNIĘTO TEMPLATE** - brak problemów z Jinja2
+- ⚠️ **NAPRAWIONO DEPRECATED API** - kompatybilność z HA 2025.12+
+- 🏷️ **GITHUB INFO** - poprawne linki @szczepuz999/tge_rdn_integration
 - 📊 **CENY BRUTTO** - VAT + opłaty giełdowe + dystrybucja
+
+## 🔧 Naprawka v1.0.8
+
+Usunięto deprecated `self.config_entry = config_entry` z config_flow.py:
+```
+⚠️ WARNING: Detected that custom integration 'tge_rdn' sets option flow config_entry explicitly, which is deprecated... This will stop working in Home Assistant 2025.12
+```
+
+**Status:** ✅ NAPRAWIONE - integracja będzie działać w przyszłych wersjach HA
 
 ## 🚀 Instalacja
 
 1. Skopiuj folder `custom_components/tge_rdn/` do `/config/custom_components/`
-2. Uruchom ponownie Home Assistant
+2. Uruchom ponownie Home Assistant  
 3. Dodaj integrację: **Configuration** → **Integrations** → **+ Add Integration** → **"TGE RDN"**
 4. Skonfiguruj stawki w opcjach integracji
 
@@ -57,12 +67,10 @@ Cena_brutto = (Cena_TGE × (1 + VAT)) + Opłata_giełdowa + Dystrybucja
 
 ## 📈 Atrybuty dla wykresów
 
-Każdy sensor zawiera atrybuty z pełnymi danymi:
-
 ```yaml
 prices_today_gross:
-  - time: "2025-10-03T10:00:00"
-    hour: 11
+  - time: "2025-10-03T12:00:00"
+    hour: 13
     price_tge_net: 350.0
     price_gross: 0.553
     price_gross_pln_mwh: 552.5

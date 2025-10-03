@@ -94,11 +94,13 @@ class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return TGERDNOptionsFlowHandler(config_entry)
 
 class TGERDNOptionsFlowHandler(config_entries.OptionsFlow):
-    """TGE RDN options flow handler."""
+    """TGE RDN options flow handler - FIXED deprecated API."""
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        # FIXED: Don't set self.config_entry explicitly (deprecated in HA 2025.12)
+        # The config_entry is available through self.config_entry property automatically
+        super().__init__()
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -107,32 +109,35 @@ class TGERDNOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        # Access config_entry through the property (not self.config_entry assignment)
+        config_entry = self.config_entry
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(
                     CONF_UNIT,
-                    default=self.config_entry.options.get(CONF_UNIT, DEFAULT_UNIT)
+                    default=config_entry.options.get(CONF_UNIT, DEFAULT_UNIT)
                 ): vol.In(UNIT_OPTIONS),
                 vol.Optional(
                     CONF_EXCHANGE_FEE,
-                    default=self.config_entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
+                    default=config_entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_VAT_RATE,
-                    default=self.config_entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
+                    default=config_entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_DIST_LOW,
-                    default=self.config_entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
+                    default=config_entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_DIST_MED,
-                    default=self.config_entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
+                    default=config_entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_DIST_HIGH,
-                    default=self.config_entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
+                    default=config_entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
                 ): vol.Coerce(float),
             }),
         )
