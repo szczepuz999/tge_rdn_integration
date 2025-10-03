@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - WEEKEND FIXED - TGE PUBLISHES DAILY!"""
+"""TGE RDN sensor platform - NEGATIVE PRICES HANDLING FOR PROSUMERS."""
 import logging
 import asyncio
 import io
@@ -329,7 +329,12 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             if result:
                 hours_count = len(result.get("hourly_data", []))
                 avg_price = result.get("average_price", 0)
-                _LOGGER.info(f"✅ {day_type.title()} data ({date.strftime('%A')}) loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh")
+                negative_hours = result.get("negative_hours", 0)
+
+                if negative_hours > 0:
+                    _LOGGER.info(f"✅ {day_type.title()} data ({date.strftime('%A')}) loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh, ⚠️ {negative_hours} negative price hours")
+                else:
+                    _LOGGER.info(f"✅ {day_type.title()} data ({date.strftime('%A')}) loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh")
 
             return result
 
@@ -388,6 +393,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Parse hourly data
             hourly_data = []
+            negative_hours = 0
             time_column = 8   # Column I
             price_column = 10 # Column K
 
@@ -398,8 +404,14 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 if pd.notna(time_value) and isinstance(time_value, str):
                     # Format: "01-10-25_H01"  
                     if re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}', str(time_value)):
-                        if pd.notna(price_value) and isinstance(price_value, (int, float)) and price_value > 0:
+                        if pd.notna(price_value) and isinstance(price_value, (int, float)):
                             hour = int(time_value.split('_H')[1])
+                            price = float(price_value)
+
+                            # Track negative prices
+                            if price < 0:
+                                negative_hours += 1
+                                _LOGGER.debug(f"Negative price detected: Hour {hour}, Price {price:.2f} PLN/MWh")
 
                             # Create datetime for specific hour
                             hour_datetime = date.replace(
@@ -412,7 +424,8 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                             hourly_data.append({
                                 'time': hour_datetime.isoformat(),
                                 'hour': hour,
-                                'price': float(price_value)
+                                'price': price,  # Keep original price (including negative)
+                                'is_negative': price < 0
                             })
 
             # Sort by hour
@@ -421,8 +434,9 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             if not hourly_data:
                 raise DataNotAvailableError("Excel file contains no valid price data")
 
-            # Calculate statistics
+            # Calculate statistics (using original prices including negative)
             prices = [item['price'] for item in hourly_data]
+            positive_prices = [p for p in prices if p >= 0]  # For positive-only stats
             average_price = sum(prices) / len(prices) if prices else 0
 
             return {
@@ -431,7 +445,10 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "average_price": average_price,
                 "min_price": min(prices) if prices else 0,
                 "max_price": max(prices) if prices else 0,
-                "total_hours": len(hourly_data)
+                "total_hours": len(hourly_data),
+                "negative_hours": negative_hours,
+                "positive_average": sum(positive_prices) / len(positive_prices) if positive_prices else 0,
+                "has_negative_prices": negative_hours > 0
             }
 
         except DataNotAvailableError:
@@ -443,7 +460,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor without template functionality."""
+    """TGE RDN sensor with NEGATIVE PRICE HANDLING for prosumers."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -505,20 +522,39 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             else:
                 return self._dist_low  # off-peak hours
 
-    def _compute_total_price(self, base_pln_mwh: float, when) -> float:
+    def _compute_total_price(self, base_pln_mwh: float, when, debug_info: bool = False) -> Dict[str, Any]:
         """
-        Compute total price using formula: 
-        total_gross = (cena_TGE × (1 + VAT)) + exchange_fee + distribution_rate
+        Compute total price with PROSUMER NEGATIVE PRICE HANDLING.
+
+        PROSUMER LOGIC: If TGE price < 0, energy cost = 0, but still pay distribution & fees
+        Formula: total_gross = (max(0, cena_TGE) × (1 + VAT)) + exchange_fee + distribution_rate
         """
         dist_rate = self._get_distribution_rate(when)
 
-        # VAT applied only to TGE price
-        tge_with_vat = float(base_pln_mwh) * (1.0 + float(self._vat_rate))
+        # PROSUMER NEGATIVE PRICE HANDLING
+        is_negative = base_pln_mwh < 0
+        effective_energy_price = max(0, base_pln_mwh)  # Negative becomes 0 for prosumers
 
-        # Add fees without VAT
-        total_gross = tge_with_vat + float(self._exchange_fee) + float(dist_rate)
+        # VAT applied only to effective energy price (0 if negative)
+        energy_with_vat = float(effective_energy_price) * (1.0 + float(self._vat_rate))
 
-        return total_gross
+        # Add fees and distribution (always applied, even for negative TGE prices)
+        total_gross = energy_with_vat + float(self._exchange_fee) + float(dist_rate)
+
+        if debug_info or is_negative:
+            if is_negative:
+                _LOGGER.debug(f"Negative price handling: TGE={base_pln_mwh:.2f} → Energy=0, Distribution={dist_rate:.2f}, Total={total_gross:.2f} PLN/MWh")
+
+        return {
+            "total_gross": total_gross,
+            "original_tge_price": base_pln_mwh,
+            "effective_energy_price": effective_energy_price,
+            "is_negative_hour": is_negative,
+            "energy_with_vat": energy_with_vat,
+            "distribution": dist_rate,
+            "exchange_fee": self._exchange_fee,
+            "vat_rate": self._vat_rate
+        }
 
     def _convert_units(self, value: float) -> float:
         """Convert price units."""
@@ -567,7 +603,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         return None
 
     def _get_total_current_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get current hour price with all fees and VAT."""
+        """Get current hour price with all fees and VAT - NEGATIVE PRICE HANDLING."""
         today_data = data.get("today")
         if not today_data or not today_data.get("hourly_data"):
             return None
@@ -576,13 +612,13 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         for item in today_data["hourly_data"]:
             if item["hour"] == current_hour:
-                total_pln_mwh = self._compute_total_price(item["price"], now)
-                return self._convert_units(total_pln_mwh)
+                price_calc = self._compute_total_price(item["price"], now)
+                return self._convert_units(price_calc["total_gross"])
 
         return None
 
     def _get_total_next_hour_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get next hour price with all fees and VAT."""
+        """Get next hour price with all fees and VAT - NEGATIVE PRICE HANDLING."""
         next_hour = now.hour + 2  # Next hour in TGE system
 
         # If next hour is tomorrow
@@ -594,8 +630,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             next_day_time = now + timedelta(hours=1)
             for item in tomorrow_data["hourly_data"]:
                 if item["hour"] == next_hour - 24:
-                    total_pln_mwh = self._compute_total_price(item["price"], next_day_time)
-                    return self._convert_units(total_pln_mwh)
+                    price_calc = self._compute_total_price(item["price"], next_day_time)
+                    return self._convert_units(price_calc["total_gross"])
         else:
             today_data = data.get("today")
             if not today_data or not today_data.get("hourly_data"):
@@ -604,18 +640,18 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             next_hour_time = now + timedelta(hours=1)
             for item in today_data["hourly_data"]:
                 if item["hour"] == next_hour:
-                    total_pln_mwh = self._compute_total_price(item["price"], next_hour_time)
-                    return self._convert_units(total_pln_mwh)
+                    price_calc = self._compute_total_price(item["price"], next_hour_time)
+                    return self._convert_units(price_calc["total_gross"])
 
         return None
 
     def _get_total_daily_average(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get daily average price with all fees and VAT."""
+        """Get daily average price with all fees and VAT - NEGATIVE PRICE HANDLING."""
         today_data = data.get("today")
         if not today_data:
             return None
 
-        # Calculate average of gross prices for all hours
+        # Calculate average of gross prices for all hours (with negative price handling)
         total_prices = []
         for item in today_data.get('hourly_data', []):
             # Construct datetime for specific hour
@@ -625,8 +661,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 second=0, 
                 microsecond=0
             )
-            total_price = self._compute_total_price(item['price'], hour_dt)
-            total_prices.append(total_price)
+            price_calc = self._compute_total_price(item['price'], hour_dt)
+            total_prices.append(price_calc["total_gross"])
 
         if not total_prices:
             return None
@@ -636,7 +672,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes - WEEKEND FIXED."""
+        """Return extra state attributes - WITH NEGATIVE PRICE INFO."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             return {"error": "Required libraries not available"}
 
@@ -646,6 +682,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         # Calculations for current hour
         now = datetime.now()
         base_price = None
+        current_price_calc = None
         today_data = self.coordinator.data.get("today")
 
         if today_data and today_data.get("hourly_data"):
@@ -653,29 +690,41 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             for item in today_data["hourly_data"]:
                 if item["hour"] == current_hour:
                     base_price = item["price"]
+                    current_price_calc = self._compute_total_price(item["price"], now, debug_info=True)
                     break
-
-        dist_rate = self._get_distribution_rate(now)
-
-        # Calculate price components
-        if base_price is not None:
-            tge_with_vat = base_price * (1.0 + self._vat_rate)
-            total_gross = tge_with_vat + self._exchange_fee + dist_rate
-        else:
-            tge_with_vat = None
-            total_gross = None
 
         data = self.coordinator.data
         tomorrow_data = data.get("tomorrow")
         tomorrow_status = data.get("tomorrow_data_status", {})
         startup_fetch = data.get("startup_fetch", False)
 
+        # Check for negative prices in today/tomorrow data
+        today_negative_info = {}
+        tomorrow_negative_info = {}
+
+        if today_data:
+            today_negative_info = {
+                "has_negative_prices": today_data.get("has_negative_prices", False),
+                "negative_hours": today_data.get("negative_hours", 0),
+                "total_hours": today_data.get("total_hours", 0),
+                "positive_average": today_data.get("positive_average", 0)
+            }
+
+        if tomorrow_data:
+            tomorrow_negative_info = {
+                "has_negative_prices": tomorrow_data.get("has_negative_prices", False),
+                "negative_hours": tomorrow_data.get("negative_hours", 0),
+                "total_hours": tomorrow_data.get("total_hours", 0),
+                "positive_average": tomorrow_data.get("positive_average", 0)
+            }
+
         attributes = {
             "last_update": data.get("last_update"),
             "unit_raw": UNIT_PLN_MWH,
             "unit_converted": self._unit,
             "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
-            "pricing_formula": "(TGE_price × (1 + VAT)) + exchange_fee + distribution_rate",
+            "pricing_formula": "max(0, TGE_price) × (1 + VAT) + exchange_fee + distribution_rate",
+            "negative_price_handling": "Prosumer: negative TGE price → 0 energy cost, still pay distribution",
             "startup_immediate_fetch": startup_fetch,
             "tge_publishes_daily": "TGE publishes data EVERY DAY including weekends",
             "data_status": {
@@ -687,19 +736,16 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "tomorrow_last_check": tomorrow_status.get("last_check"),
                 "tomorrow_force_fetched": tomorrow_status.get("force_fetched", False),
                 "tomorrow_day": tomorrow_status.get("tomorrow_day", "Unknown"),
+                "today_negative": today_negative_info,
+                "tomorrow_negative": tomorrow_negative_info,
             },
-            "components": {
-                "base_energy_pln_mwh": base_price,
-                "tge_with_vat_pln_mwh": tge_with_vat,
-                "exchange_fee_pln_mwh": self._exchange_fee,
-                "distribution_pln_mwh": dist_rate,
-                "vat_rate": self._vat_rate,
-                "total_gross_pln_mwh": total_gross
+            "current_hour_components": current_price_calc if current_price_calc else {
+                "error": "Current hour data not available"
             }
         }
 
         if today_data:
-            # Calculate gross prices for all hours today
+            # Calculate gross prices for all hours today WITH NEGATIVE PRICE HANDLING
             prices_today_gross = []
             for item in today_data.get("hourly_data", []):
                 # Construct datetime for hour
@@ -709,15 +755,22 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     second=0, 
                     microsecond=0
                 )
-                gross_price_pln_mwh = self._compute_total_price(item['price'], hour_dt)
-                gross_price_converted = self._convert_units(gross_price_pln_mwh)
+                price_calc = self._compute_total_price(item['price'], hour_dt)
+                gross_price_converted = self._convert_units(price_calc["total_gross"])
 
                 prices_today_gross.append({
                     'time': item['time'],
                     'hour': item['hour'],
-                    'price_tge_net': item['price'],
+                    'price_tge_original': item['price'],  # Original TGE (can be negative)
+                    'price_energy_effective': price_calc["effective_energy_price"],  # Energy price used (0 if negative)
+                    'is_negative_hour': price_calc["is_negative_hour"],
                     'price_gross': gross_price_converted,
-                    'price_gross_pln_mwh': gross_price_pln_mwh
+                    'price_gross_pln_mwh': price_calc["total_gross"],
+                    'components': {
+                        'energy_with_vat': price_calc["energy_with_vat"],
+                        'exchange_fee': price_calc["exchange_fee"],
+                        'distribution': price_calc["distribution"]
+                    }
                 })
 
             # Calculate gross statistics for today
@@ -729,14 +782,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "today_max": today_data.get("max_price"),
                 "today_hours": today_data.get("total_hours"),
                 "prices_today": today_data.get("hourly_data", []),  # Original TGE prices
-                "prices_today_gross": prices_today_gross,  # Gross prices with VAT and distribution
+                "prices_today_gross": prices_today_gross,  # Prosumer gross prices with negative handling
                 "today_average_gross": sum(gross_prices) / len(gross_prices) if gross_prices else None,
                 "today_min_gross": min(gross_prices) if gross_prices else None,
                 "today_max_gross": max(gross_prices) if gross_prices else None,
             })
 
         if tomorrow_data:
-            # Calculate gross prices for all hours tomorrow
+            # Calculate gross prices for all hours tomorrow WITH NEGATIVE PRICE HANDLING
             prices_tomorrow_gross = []
             tomorrow_date = now + timedelta(days=1)
             for item in tomorrow_data.get("hourly_data", []):
@@ -747,15 +800,22 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     second=0, 
                     microsecond=0
                 )
-                gross_price_pln_mwh = self._compute_total_price(item['price'], hour_dt)
-                gross_price_converted = self._convert_units(gross_price_pln_mwh)
+                price_calc = self._compute_total_price(item['price'], hour_dt)
+                gross_price_converted = self._convert_units(price_calc["total_gross"])
 
                 prices_tomorrow_gross.append({
                     'time': item['time'],
                     'hour': item['hour'],
-                    'price_tge_net': item['price'],
+                    'price_tge_original': item['price'],  # Original TGE (can be negative)
+                    'price_energy_effective': price_calc["effective_energy_price"],  # Energy price used (0 if negative)
+                    'is_negative_hour': price_calc["is_negative_hour"],
                     'price_gross': gross_price_converted,
-                    'price_gross_pln_mwh': gross_price_pln_mwh
+                    'price_gross_pln_mwh': price_calc["total_gross"],
+                    'components': {
+                        'energy_with_vat': price_calc["energy_with_vat"],
+                        'exchange_fee': price_calc["exchange_fee"],
+                        'distribution': price_calc["distribution"]
+                    }
                 })
 
             # Calculate gross statistics for tomorrow
@@ -767,7 +827,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "tomorrow_max": tomorrow_data.get("max_price"),
                 "tomorrow_hours": tomorrow_data.get("total_hours"),
                 "prices_tomorrow": tomorrow_data.get("hourly_data", []),  # Original TGE prices
-                "prices_tomorrow_gross": prices_tomorrow_gross,  # Gross prices with VAT and distribution
+                "prices_tomorrow_gross": prices_tomorrow_gross,  # Prosumer gross prices with negative handling
                 "tomorrow_average_gross": sum(gross_prices_tomorrow) / len(gross_prices_tomorrow) if gross_prices_tomorrow else None,
                 "tomorrow_min_gross": min(gross_prices_tomorrow) if gross_prices_tomorrow else None,
                 "tomorrow_max_gross": max(gross_prices_tomorrow) if gross_prices_tomorrow else None,

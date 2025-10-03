@@ -1,9 +1,18 @@
-# TGE RDN Energy Prices Integration v1.2.0
+# TGE RDN Energy Prices Integration v1.3.0
 
 [![GitHub Release](https://img.shields.io/github/release/szczepuz999/tge_rdn_integration.svg?style=flat-square)](https://github.com/szczepuz999/tge_rdn_integration/releases)
 [![GitHub](https://img.shields.io/github/license/szczepuz999/tge_rdn_integration.svg?style=flat-square)](LICENSE)
 
 Integracja Home Assistant do pobierania cen energii z TGE RDN (Towarowa Giełda Energii - Rynek Dnia Następnego).
+
+
+## ✅ Wersja 1.3.0 - Co nowego:
+
+- ⚠️ Negative price detected: Hour 14, Price -50.00 PLN/MWh
+- 📊 Negative price handling: TGE=-50.00 → Energy=0, Distribution=120.00, Total=122.00 PLN/MWh
+- ✅ Today data loaded: 24 hours, avg 275.50 PLN/MWh, ⚠️ 3 negative price hours
+
+
 
 ## ✅ Wersja 1.2.0 - Co nowego:
 
