@@ -76,6 +76,7 @@ Dzień roboczy:
 Jeśli cena TGE < 0 PLN/MWh:
 ✅ Energia: 0 PLN (nie ujemna, nie rabat)
 ✅ Dystrybucja: nadal płacisz (najniższa stawka w weekend/święto)
+✅ Dystrybucja: nadal płacisz (najniższa stawka w weekend/święto)
 ✅ Opłaty: nadal płacisz (2 PLN/MWh)
 ✅ VAT: od 0 PLN energii = 0 PLN
 ```
@@ -87,6 +88,7 @@ Cena_brutto = (max(0, Cena_TGE) × (1 + VAT)) + Opłata_giełdowa + Dystrybucja
 
 ## 🚀 Immediate Fetch (v1.1.0+)
 
+Przy starcie integracji **natychmiast** pobiera dane:
 Przy starcie integracji **natychmiast** pobiera dane:
 ```
 🚀 TGE RDN Integration starting up...
@@ -108,6 +110,7 @@ Przy starcie integracji **natychmiast** pobiera dane:
 
 1. Skopiuj folder `custom_components/tge_rdn/` do `/config/custom_components/`
 2. **Uruchom ponownie Home Assistant**
+2. **Uruchom ponownie Home Assistant**
 3. Dodaj integrację: **Configuration** → **Integrations** → **+ Add Integration** → **"TGE RDN"**
 4. Skonfiguruj stawki w opcjach integracji
 
@@ -122,6 +125,9 @@ Przy starcie integracji **natychmiast** pobiera dane:
 ### Opłaty i podatki:
 - **Opłata giełdowa** [PLN/MWh] - np. 2.0 (płacisz zawsze)
 - **Stawka VAT** - np. 0.23 dla 23% (od energii, 0 jeśli ujemna)
+- **Dystrybucja pozostałe godziny** [PLN/MWh] - off-peak, weekendy, święta
+- **Dystrybucja szczyt przedpołudniowy** [PLN/MWh] - 7-13 dni robocze
+- **Dystrybucja szczyt wieczorny** [PLN/MWh] - 16-21/19-22 dni robocze
 - **Dystrybucja pozostałe godziny** [PLN/MWh] - off-peak, weekendy, święta
 - **Dystrybucja szczyt przedpołudniowy** [PLN/MWh] - 7-13 dni robocze
 - **Dystrybucja szczyt wieczorny** [PLN/MWh] - 16-21/19-22 dni robocze
