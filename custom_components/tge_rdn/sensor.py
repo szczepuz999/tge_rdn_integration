@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - WITH POLISH HOLIDAYS SUPPORT."""
+"""TGE RDN sensor platform - WITH GUARANTEED HOURLY UPDATES."""
 import logging
 import asyncio
 import io
@@ -20,13 +20,14 @@ import voluptuous as vol
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -97,6 +98,13 @@ async def async_setup_entry(
 
     async_add_entities(entities, True)
 
+    # Set up hourly update scheduler
+    async_track_time_interval(
+        hass, 
+        coordinator.hourly_update_callback,
+        timedelta(minutes=5)  # Check every 5 minutes for hour changes
+    )
+
     # Log startup summary
     if coordinator.data:
         today_available = coordinator.data.get("today") is not None
@@ -106,17 +114,19 @@ async def async_setup_entry(
         _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data - WITH POLISH HOLIDAYS."""
+    """Class to manage fetching TGE RDN data - WITH GUARANTEED HOURLY UPDATES."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize."""
+        """Initialize with hour tracking."""
         self.hass = hass
         self.entry = entry
         self.last_tomorrow_check = None
         self.tomorrow_data_available = False
         self.startup_fetch_completed = False
+        self.last_hour_updated = datetime.now().hour
+        self.hourly_callback_unsub = None
 
-        # Determine update interval based on time
+        # Initial update interval
         update_interval = self._get_update_interval()
 
         super().__init__(
@@ -125,6 +135,26 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=update_interval),
         )
+
+    @callback
+    async def hourly_update_callback(self, now: datetime) -> None:
+        """Called every 5 minutes to check for hour changes."""
+        current_hour = now.hour
+        current_minute = now.minute
+
+        # Check if we crossed an hour boundary
+        if self.last_hour_updated != current_hour:
+            _LOGGER.info(f"⏰ Hour boundary detected: {self.last_hour_updated}:XX → {current_hour}:XX - forcing update")
+            self.last_hour_updated = current_hour
+
+            # Force immediate update for new hour
+            await self.async_request_refresh()
+
+        # Also update at specific aligned times
+        elif current_minute in (0, 5) and current_minute != getattr(self, '_last_aligned_minute', None):
+            _LOGGER.debug(f"⏰ Aligned time update: {current_hour}:{current_minute:02d}")
+            self._last_aligned_minute = current_minute
+            await self.async_request_refresh()
 
     def _get_update_interval(self) -> int:
         """Get update interval based on current time."""
@@ -153,10 +183,10 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Pre-tomorrow window - preparing for tomorrow's data (DAILY)")
             return UPDATE_INTERVAL_FREQUENT  # 15 minutes
 
-        # Other hours - normal interval
+        # Other hours - normal interval with hour alignment
         else:
-            _LOGGER.debug("Normal hours - standard interval")
-            return UPDATE_INTERVAL_NORMAL  # 1 hour
+            _LOGGER.debug("Normal hours - hour-aligned interval")
+            return 1800  # 30 minutes
 
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh with IMMEDIATE FETCH of both days."""
@@ -234,7 +264,14 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
 
         try:
             now = datetime.now()
-            _LOGGER.info(f"🔄 Regular update cycle at {now.strftime('%H:%M:%S')} on {now.strftime('%A')}")
+            update_reason = "scheduled"
+
+            # Check if this is an hour boundary update
+            if self.last_hour_updated != now.hour:
+                update_reason = f"hour_change ({self.last_hour_updated} → {now.hour})"
+                self.last_hour_updated = now.hour
+
+            _LOGGER.info(f"🔄 Regular update cycle at {now.strftime('%H:%M:%S')} on {now.strftime('%A')} ({update_reason})")
 
             # Always fetch today's data
             _LOGGER.debug("📡 Fetching today's data")
@@ -249,6 +286,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "tomorrow": tomorrow_data,
                 "last_update": now,
                 "startup_fetch": False,
+                "update_reason": update_reason,
                 "tomorrow_data_status": {
                     "available": tomorrow_data is not None,
                     "last_check": self.last_tomorrow_check,
@@ -483,7 +521,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor with POLISH HOLIDAYS & NEGATIVE PRICE HANDLING."""
+    """TGE RDN sensor with GUARANTEED HOURLY UPDATES & POLISH HOLIDAYS."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -493,6 +531,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._sensor_type = sensor_type
         self._attr_name = f"{DEFAULT_NAME} {sensor_type.replace('_', ' ').title()}"
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{sensor_type}"
+        self._last_state_hour = None  # Track when state was last calculated
 
         # Configuration from entry
         self._unit = entry.options.get(CONF_UNIT, DEFAULT_UNIT)
@@ -513,6 +552,38 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
     def native_unit_of_measurement(self) -> str:
         """Return the unit of measurement."""
         return self._unit
+
+    @property
+    def should_poll(self) -> bool:
+        """Return if polling is needed - Enable polling for guaranteed updates."""
+        return True
+
+    @property
+    def state(self) -> Optional[float]:
+        """Return the state of the sensor with hour tracking."""
+        if not REQUIRED_LIBRARIES_AVAILABLE:
+            return None
+
+        if not self.coordinator.data:
+            return None
+
+        try:
+            current_hour = datetime.now().hour
+
+            # Log hour changes for current price sensor
+            if (self._sensor_type == "current_price" and 
+                self._last_state_hour is not None and 
+                self._last_state_hour != current_hour):
+                _LOGGER.info(f"⏰ Current price sensor: Hour changed {self._last_state_hour} → {current_hour}")
+
+            self._last_state_hour = current_hour
+
+            value = self._calculate_value()
+            return value
+
+        except Exception as err:
+            _LOGGER.error(f"Error calculating sensor value: {err}")
+            return None
 
     def _get_distribution_rate(self, when) -> float:
         """Return distribution rate [PLN/MWh] based on local time, season and POLISH HOLIDAYS."""
@@ -670,23 +741,6 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         return value  # PLN/MWh - default
 
-    @property
-    def state(self) -> Optional[float]:
-        """Return the state of the sensor."""
-        if not REQUIRED_LIBRARIES_AVAILABLE:
-            return None
-
-        if not self.coordinator.data:
-            return None
-
-        try:
-            value = self._calculate_value()
-            return value
-
-        except Exception as err:
-            _LOGGER.error(f"Error calculating sensor value: {err}")
-            return None
-
     def _calculate_value(self) -> Optional[float]:
         """Calculate sensor value based on type."""
         data = self.coordinator.data
@@ -773,7 +827,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes - WITH POLISH HOLIDAYS & NEGATIVE PRICE INFO."""
+        """Return extra state attributes - WITH GUARANTEED HOURLY UPDATES INFO."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             return {"error": "Required libraries not available"}
 
@@ -806,6 +860,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         tomorrow_data = data.get("tomorrow")
         tomorrow_status = data.get("tomorrow_data_status", {})
         startup_fetch = data.get("startup_fetch", False)
+        update_reason = data.get("update_reason", "unknown")
 
         # Check for negative prices in today/tomorrow data
         today_negative_info = {}
@@ -829,12 +884,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         attributes = {
             "last_update": data.get("last_update"),
+            "last_update_reason": update_reason,
             "unit_raw": UNIT_PLN_MWH,
             "unit_converted": self._unit,
             "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
             "pricing_formula": "max(0, TGE_price) × (1 + VAT) + exchange_fee + distribution_rate",
             "negative_price_handling": "Prosumer: negative TGE price → 0 energy cost, still pay distribution",
             "polish_holidays_support": "Weekends and Polish holidays use lowest distribution rate 24h",
+            "hourly_updates": "Guaranteed updates at hour boundaries (XX:00) for current price",
             "startup_immediate_fetch": startup_fetch,
             "tge_publishes_daily": "TGE publishes data EVERY DAY including weekends",
             "data_status": {
@@ -852,6 +909,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "today_is_polish_holiday": today_is_holiday,
                 "tomorrow_is_weekend": tomorrow_is_weekend,
                 "tomorrow_is_polish_holiday": tomorrow_is_holiday,
+                "current_hour": now.hour,
+                "last_state_hour": self._last_state_hour,
             },
             "current_hour_components": current_price_calc if current_price_calc else {
                 "error": "Current hour data not available"
