@@ -5,7 +5,7 @@
 
 Integracja Home Assistant do pobierania cen energii z TGE RDN (Towarowa Giełda Energii - Rynek Dnia Następnego).
 
-## ✅ Wersja 1.5.0 - Co nowego:
+## ✅ Wersja 1.5.1 - Co nowego:
 
 - ⏰ **GUARANTEED HOURLY UPDATES** - sensor current_price gwarantuje aktualizację o pełnych godzinach
 - 🔍 **HOUR BOUNDARY DETECTION** - wykrywa zmiany godzin i wymusza natychmiastową aktualizację
