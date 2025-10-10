@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - WITH GUARANTEED HOURLY UPDATES."""
+"""TGE RDN sensor platform - WITH EARLIER TOMORROW DATA CHECK FROM 12:00."""
 import logging
 import asyncio
 import io
@@ -114,7 +114,7 @@ async def async_setup_entry(
         _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data - WITH GUARANTEED HOURLY UPDATES."""
+    """Class to manage fetching TGE RDN data - WITH EARLIER TOMORROW DATA CHECK FROM 12:00."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize with hour tracking."""
@@ -157,7 +157,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             await self.async_request_refresh()
 
     def _get_update_interval(self) -> int:
-        """Get update interval based on current time."""
+        """Get update interval based on current time - WITH EARLIER TOMORROW CHECK."""
         now = datetime.now()
         current_time = now.time()
 
@@ -173,15 +173,10 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Morning window - today's data publication time")
             return UPDATE_INTERVAL_FREQUENT  # 15 minutes
 
-        # 14:00-16:00: Tomorrow's data publication window - CHECK FREQUENTLY EVERY DAY
-        elif time(14, 0) <= current_time <= time(16, 0):
-            _LOGGER.debug("Afternoon window - tomorrow's data publication time (DAILY)")
+        # 12:00-16:00: Tomorrow's data publication window - EXTENDED FROM 12:00!
+        elif time(12, 0) <= current_time <= time(16, 0):
+            _LOGGER.debug("Afternoon window - tomorrow's data publication time (FROM 12:00 DAILY)")
             return UPDATE_INTERVAL_NEXT_DAY  # 10 minutes
-
-        # 13:30-14:00: Pre-check for tomorrow data EVERY DAY
-        elif time(13, 30) <= current_time <= time(14, 0):
-            _LOGGER.debug("Pre-tomorrow window - preparing for tomorrow's data (DAILY)")
-            return UPDATE_INTERVAL_FREQUENT  # 15 minutes
 
         # Other hours - normal interval with hour alignment
         else:
@@ -245,7 +240,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "tomorrow_data_status": {
                     "available": self.tomorrow_data_available,
                     "last_check": self.last_tomorrow_check,
-                    "expected_time": "14:00-15:30 DAILY (including weekends)",
+                    "expected_time": "12:00-16:00 DAILY (including weekends) - STARTS FROM 12:00!",
                     "force_fetched": True,
                     "tomorrow_day": tomorrow.strftime('%A')
                 }
@@ -290,7 +285,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "tomorrow_data_status": {
                     "available": tomorrow_data is not None,
                     "last_check": self.last_tomorrow_check,
-                    "expected_time": "14:00-15:30 DAILY (including weekends)",
+                    "expected_time": "12:00-16:00 DAILY (including weekends) - STARTS FROM 12:00!",
                     "force_fetched": False,
                     "tomorrow_day": tomorrow.strftime('%A')
                 }
@@ -332,7 +327,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug(f"📅 Failed to fetch new tomorrow data, preserving existing")
                     return self.data.get("tomorrow")
                 else:
-                    if now.hour >= 14:  # Only log if we expect data to be available
+                    if now.hour >= 12:  # Log if we expect data to be available (FROM 12:00!)
                         _LOGGER.info(f"📅 Tomorrow's data ({tomorrow.strftime('%A')}) not yet available at {now.strftime('%H:%M:%S')}")
                     self.tomorrow_data_available = False
                     return None
@@ -346,19 +341,19 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 return None
 
     def _should_fetch_tomorrow_data(self, now: datetime) -> bool:
-        """Determine if we should fetch tomorrow's data."""
+        """Determine if we should fetch tomorrow's data - STARTS FROM 12:00."""
         current_time = now.time()
 
-        # Before 13:30 - don't fetch (too early)
-        if current_time < time(13, 30):
+        # Before 12:00 - don't fetch (too early) - CHANGED FROM 13:30!
+        if current_time < time(12, 0):
             return False
 
-        # 13:30-18:00 - ACTIVE FETCH WINDOW - always try
-        if time(13, 30) <= current_time <= time(18, 0):
+        # 12:00-16:00 - ACTIVE FETCH WINDOW - always try (EXTENDED FROM 12:00!)
+        if time(12, 0) <= current_time <= time(16, 0):
             return True
 
-        # 18:00-22:00 - EXTENDED WINDOW - only if we don't have data yet  
-        if time(18, 0) < current_time < time(22, 0):
+        # 16:00-22:00 - EXTENDED WINDOW - only if we don't have data yet  
+        if time(16, 0) < current_time < time(22, 0):
             return not self.tomorrow_data_available
 
         # After 22:00 - too late, don't fetch
@@ -521,7 +516,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor with GUARANTEED HOURLY UPDATES & POLISH HOLIDAYS."""
+    """TGE RDN sensor with GUARANTEED HOURLY UPDATES & POLISH HOLIDAYS & EARLIER TOMORROW CHECK."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -827,7 +822,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes - WITH GUARANTEED HOURLY UPDATES INFO."""
+        """Return extra state attributes - WITH EARLIER TOMORROW CHECK INFO."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             return {"error": "Required libraries not available"}
 
@@ -892,6 +887,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             "negative_price_handling": "Prosumer: negative TGE price → 0 energy cost, still pay distribution",
             "polish_holidays_support": "Weekends and Polish holidays use lowest distribution rate 24h",
             "hourly_updates": "Guaranteed updates at hour boundaries (XX:00) for current price",
+            "tomorrow_check_window": "12:00-16:00 DAILY (starts from 12:00 - extended by 1.5h earlier!)",
             "startup_immediate_fetch": startup_fetch,
             "tge_publishes_daily": "TGE publishes data EVERY DAY including weekends",
             "data_status": {
@@ -899,7 +895,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                 "tomorrow_available": tomorrow_data is not None,
                 "today_hours": len(today_data.get("hourly_data", [])) if today_data else 0,
                 "tomorrow_hours": len(tomorrow_data.get("hourly_data", [])) if tomorrow_data else 0,
-                "tomorrow_expected_time": tomorrow_status.get("expected_time", "14:00-15:30 DAILY (including weekends)"),
+                "tomorrow_expected_time": tomorrow_status.get("expected_time", "12:00-16:00 DAILY - STARTS FROM 12:00!"),
                 "tomorrow_last_check": tomorrow_status.get("last_check"),
                 "tomorrow_force_fetched": tomorrow_status.get("force_fetched", False),
                 "tomorrow_day": tomorrow_status.get("tomorrow_day", "Unknown"),
