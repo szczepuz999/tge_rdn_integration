@@ -1,16 +1,14 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "TGE RDN Configuration",
-        "data": {
-          "unit": "Price unit",
-          "exchange_fee": "Exchange fee [PLN/MWh]",
-          "vat_rate": "VAT rate (0.23 = 23%)",
-          "dist_low": "Distribution off-peak [PLN/MWh]",
-          "dist_med": "Distribution morning [PLN/MWh]",
-          "dist_high": "Distribution evening [PLN/MWh]"
-        }
+  "step": {
+    "user": {
+      "title": "TGE RDN Configuration",
+      "data": {
+        "unit": "Price unit",
+        "exchange_fee": "Exchange fee [PLN/MWh]",
+        "vat_rate": "VAT rate (0.23 = 23%)",
+        "dist_low": "Distribution off-peak [PLN/MWh]",
+        "dist_med": "Distribution morning [PLN/MWh]",
+        "dist_high": "Distribution evening [PLN/MWh]"
       }
     }
   }

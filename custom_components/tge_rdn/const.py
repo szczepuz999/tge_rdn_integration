@@ -1,4 +1,4 @@
-"""Constants."""
+"""Constants for TGE RDN integration."""
 DOMAIN = "tge_rdn"
 DEFAULT_NAME = "TGE RDN"
 UNIT_PLN_MWH = "PLN/MWh"
@@ -21,4 +21,4 @@ UPDATE_INTERVAL_CURRENT = 300
 UPDATE_INTERVAL_NEXT_DAY = 600
 UPDATE_INTERVAL_FREQUENT = 900
 UPDATE_INTERVAL_NORMAL = 3600
-TGE_URL_PATTERN = "https://tge.pl/pub/TGE/A_SDAC%20{year}/RDN/Raport_RDN_dzie_dostawy_delivery_day_{year}_{month:02d}_{day:02d}.xlsx"
+TGE_PAGE_URL = "https://tge.pl/RDN_instrumenty_15"

@@ -12,7 +12,8 @@
   "requirements": [
     "pandas>=1.5.0",
     "requests>=2.28.0",
-    "openpyxl>=3.0.9"
+    "openpyxl>=3.0.9",
+    "beautifulsoup4>=4.11.0"
   ],
-  "version": "1.6.1"
+  "version": "1.7.1"
 }

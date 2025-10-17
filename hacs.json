@@ -1,9 +1,9 @@
 {
   "name": "TGE RDN Energy Prices",
-  "hacs": "1.6.1",
+  "render_readme": true,
   "domains": [
     "sensor"
   ],
-  "iot_class": "Cloud Polling",
+  "iot_class": "cloud_polling",
   "homeassistant": "2023.1.0"
 }
