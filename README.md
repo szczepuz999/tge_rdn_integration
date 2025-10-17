@@ -1,15 +1,15 @@
-# TGE RDN Energy Prices Integration v1.6.0
+# TGE RDN Energy Prices Integration v1.6.1
 
 Integracja Home Assistant do pobierania cen energii z TGE RDN (Towarowa Giełda Energii - Rynek Dnia Następnego).
 
-## ✅ Wersja 1.6.0 - Co nowego:
+## ✅ Wersja 1.6.1 - Co nowego:
 
 - 🔍 **SMART URL FINDING** - automatyczne radzenie sobie z niespójnymi nazwami plików TGE
 - 📁 **9 FILE VARIATIONS** - próbuje _2, _3, ost, _ost, _final i inne warianty
 - 🔄 **AUTOMATIC FALLBACK** - jeśli jeden wariant nie działa, próbuje kolejnych
 - 📊 **ENHANCED LOGGING** - pokazuje wszystkie próby znalezienia pliku
 
-## 🔍 SMART URL FINDING (v1.6.0)
+## 🔍 SMART URL FINDING (v1.6.1)
 
 ### Problem z TGE:
 TGE używa **niespójnych nazw plików**:
@@ -19,7 +19,7 @@ TGE używa **niespójnych nazw plików**:
 2025-10-15: ...delivery_day_2025_10_15.xlsx        ← standard
 ```
 
-### Rozwiązanie v1.6.0:
+### Rozwiązanie v1.6.1:
 Integracja automatycznie próbuje **9 wariantów**:
 1. Standardowa nazwa
 2. _2, _3, _4 (wersje)

@@ -1,8 +1,5 @@
-"""TGE RDN sensor platform - WITH SMART URL FINDING FOR INCONSISTENT TGE NAMING."""
-import logging
-import asyncio
-import io
-import re
+"""TGE RDN sensor - v1.6.1 COMPLETE."""
+import logging, io, re
 from datetime import datetime, timedelta, time, date
 from typing import Dict, List, Optional, Any
 
@@ -10,956 +7,316 @@ try:
     import pandas as pd
     import requests
     import openpyxl
-    REQUIRED_LIBRARIES_AVAILABLE = True
-except ImportError as err:
-    REQUIRED_LIBRARIES_AVAILABLE = False
-    IMPORT_ERROR = str(err)
-
-import voluptuous as vol
+    LIBS_OK = True
+except ImportError as e:
+    LIBS_OK = False
+    IMPORT_ERR = str(e)
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.util import dt as dt_util
-
-from .const import (
-    DOMAIN,
-    DEFAULT_NAME,
-    TGE_URL_PATTERN,
-    UNIT_PLN_MWH,
-    UNIT_PLN_KWH,
-    UNIT_EUR_MWH,
-    UNIT_EUR_KWH,
-    CONF_UNIT,
-    DEFAULT_UNIT,
-    UPDATE_INTERVAL_CURRENT,
-    UPDATE_INTERVAL_NEXT_DAY,
-    UPDATE_INTERVAL_FREQUENT,
-    UPDATE_INTERVAL_NORMAL,
-    CONF_EXCHANGE_FEE,
-    CONF_VAT_RATE,
-    CONF_DIST_LOW,
-    CONF_DIST_MED,
-    CONF_DIST_HIGH,
-    DEFAULT_EXCHANGE_FEE,
-    DEFAULT_VAT_RATE,
-    DEFAULT_DIST_LOW,
-    DEFAULT_DIST_MED,
-    DEFAULT_DIST_HIGH,
-)
+from .const import *
 
 _LOGGER = logging.getLogger(__name__)
 
 class DataNotAvailableError(Exception):
-    """Custom exception for when TGE data is not yet available."""
     pass
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
-) -> None:
-    """Set up TGE RDN sensors based on a config entry."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
+    if not LIBS_OK:
+        raise Exception(f"Missing libraries: {IMPORT_ERR}")
+    _LOGGER.info("🚀 TGE RDN starting...")
+    coord = TGERDNCoordinator(hass, entry)
+    await coord.async_config_entry_first_refresh()
+    async_add_entities([
+        TGERDNSensor(coord, entry, "current_price"),
+        TGERDNSensor(coord, entry, "next_hour_price"),
+        TGERDNSensor(coord, entry, "daily_average"),
+    ], True)
+    async_track_time_interval(hass, coord.hourly_callback, timedelta(minutes=5))
 
-    # Check if required libraries are available
-    if not REQUIRED_LIBRARIES_AVAILABLE:
-        _LOGGER.error(
-            "Required libraries not available for TGE RDN integration: %s. "
-            "Home Assistant will attempt to install them automatically. "
-            "Please restart Home Assistant after installation completes.",
-            IMPORT_ERROR
-        )
-        raise Exception(f"Missing required libraries: {IMPORT_ERROR}")
-
-    _LOGGER.info("🚀 TGE RDN Integration starting up...")
-
-    coordinator = TGERDNDataUpdateCoordinator(hass, entry)
-
-    # IMMEDIATE FETCH on startup - try to get both today and tomorrow data
-    _LOGGER.info("📡 Performing immediate data fetch on startup (ignoring schedule)...")
-    await coordinator.async_config_entry_first_refresh()
-
-    entities = []
-
-    # Current price sensor
-    entities.append(TGERDNSensor(coordinator, entry, "current_price"))
-
-    # Next hour price sensor
-    entities.append(TGERDNSensor(coordinator, entry, "next_hour_price"))
-
-    # Daily average price sensor
-    entities.append(TGERDNSensor(coordinator, entry, "daily_average"))
-
-    async_add_entities(entities, True)
-
-    # Set up hourly update scheduler
-    async_track_time_interval(
-        hass, 
-        coordinator.hourly_update_callback,
-        timedelta(minutes=5)  # Check every 5 minutes for hour changes
-    )
-
-    # Log startup summary
-    if coordinator.data:
-        today_available = coordinator.data.get("today") is not None
-        tomorrow_available = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN Integration ready! Today: {'✅' if today_available else '❌'}, Tomorrow: {'✅' if tomorrow_available else '❌'}")
-    else:
-        _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
-
-class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data - WITH SMART URL FINDING."""
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize with hour tracking."""
+class TGERDNCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass, entry):
         self.hass = hass
         self.entry = entry
-        self.last_tomorrow_check = None
-        self.tomorrow_data_available = False
-        self.startup_fetch_completed = False
-        self.last_hour_updated = datetime.now().hour
-        self.hourly_callback_unsub = None
-
-        # Initial update interval
-        update_interval = self._get_update_interval()
-
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=DOMAIN,
-            update_interval=timedelta(seconds=update_interval),
-        )
+        self.tomorrow_available = False
+        self.last_hour = datetime.now().hour
+        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(seconds=self._get_interval()))
 
     @callback
-    async def hourly_update_callback(self, now: datetime) -> None:
-        """Called every 5 minutes to check for hour changes."""
-        current_hour = now.hour
-        current_minute = now.minute
-
-        # Check if we crossed an hour boundary
-        if self.last_hour_updated != current_hour:
-            _LOGGER.info(f"⏰ Hour boundary detected: {self.last_hour_updated}:XX → {current_hour}:XX - forcing update")
-            self.last_hour_updated = current_hour
-
-            # Force immediate update for new hour
+    async def hourly_callback(self, now):
+        if self.last_hour != now.hour:
+            _LOGGER.info(f"⏰ Hour {self.last_hour} → {now.hour}")
+            self.last_hour = now.hour
             await self.async_request_refresh()
 
-        # Also update at specific aligned times
-        elif current_minute in (0, 5) and current_minute != getattr(self, '_last_aligned_minute', None):
-            _LOGGER.debug(f"⏰ Aligned time update: {current_hour}:{current_minute:02d}")
-            self._last_aligned_minute = current_minute
-            await self.async_request_refresh()
+    def _get_interval(self):
+        t = datetime.now().time()
+        if time(0,5) <= t <= time(1,0): return 300
+        elif time(11,0) <= t <= time(12,0): return 900
+        elif time(12,0) <= t <= time(16,0): return 600
+        else: return 1800
 
-    def _get_update_interval(self) -> int:
-        """Get update interval based on current time - WITH EARLIER TOMORROW CHECK."""
-        now = datetime.now()
-        current_time = now.time()
+    def _gen_urls(self, dt):
+        y,m,d = dt.year, dt.month, dt.day
+        b = f"https://tge.pl/pub/TGE/A_SDAC%20{y}/RDN/Raport_RDN_dzie_dostawy_delivery_day_{y}_{m:02d}_{d:02d}"
+        return [f"{b}.xlsx", f"{b}_2.xlsx", f"{b}_3.xlsx", f"{b}_4.xlsx", 
+                f"{b}ost.xlsx", f"{b}_ost.xlsx", f"{b}_final.xlsx", f"{b}_v2.xlsx", f"{b}_v3.xlsx"]
 
-        _LOGGER.debug(f"Determining update interval for time: {current_time}")
-
-        # 00:05-01:00: Quick checks for today's data  
-        if time(0, 5) <= current_time <= time(1, 0):
-            _LOGGER.debug("Early morning window - checking today's data frequently")
-            return UPDATE_INTERVAL_CURRENT  # 5 minutes
-
-        # 11:00-12:00: Today's data should be published, check frequently
-        elif time(11, 0) <= current_time <= time(12, 0):
-            _LOGGER.debug("Morning window - today's data publication time")
-            return UPDATE_INTERVAL_FREQUENT  # 15 minutes
-
-        # 12:00-16:00: Tomorrow's data publication window - EXTENDED FROM 12:00!
-        elif time(12, 0) <= current_time <= time(16, 0):
-            _LOGGER.debug("Afternoon window - tomorrow's data publication time (FROM 12:00 DAILY)")
-            return UPDATE_INTERVAL_NEXT_DAY  # 10 minutes
-
-        # Other hours - normal interval with hour alignment
-        else:
-            _LOGGER.debug("Normal hours - hour-aligned interval")
-            return 1800  # 30 minutes
-
-    def _generate_possible_urls(self, date: datetime) -> List[str]:
-        """Generate list of possible URLs for given date - TGE uses inconsistent naming!"""
-        year = date.year
-        month = date.month
-        day = date.day
-
-        base_url = f"https://tge.pl/pub/TGE/A_SDAC%20{year}/RDN/Raport_RDN_dzie_dostawy_delivery_day_{year}_{month:02d}_{day:02d}"
-
-        # Try multiple filename variations (TGE is inconsistent!)
-        possible_urls = [
-            f"{base_url}.xlsx",           # Standard (first try)
-            f"{base_url}_2.xlsx",          # Version 2 (common)
-            f"{base_url}_3.xlsx",          # Version 3
-            f"{base_url}_4.xlsx",          # Version 4
-            f"{base_url}ost.xlsx",         # "ostateczna" without underscore
-            f"{base_url}_ost.xlsx",        # "ostateczna" with underscore
-            f"{base_url}_final.xlsx",      # Final version (English)
-            f"{base_url}_v2.xlsx",         # Version notation v2
-            f"{base_url}_v3.xlsx",         # Version notation v3
-        ]
-
-        return possible_urls
-
-    async def async_config_entry_first_refresh(self) -> None:
-        """Perform first refresh with IMMEDIATE FETCH of both days."""
-        _LOGGER.info("🔄 Starting first refresh with immediate fetch...")
-
-        try:
-            # Force fetch both days immediately on startup - EVERY DAY
-            data = await self._force_fetch_both_days()
-
-            if data:
-                self.data = data
-                self.startup_fetch_completed = True
-
-                today_status = "✅ Available" if data.get("today") else "❌ Not available"  
-                tomorrow_status = "✅ Available" if data.get("tomorrow") else "❌ Not available"
-                _LOGGER.info(f"🎯 Immediate fetch complete: Today {today_status}, Tomorrow {tomorrow_status}")
-            else:
-                _LOGGER.warning("⚠️ Immediate fetch returned no data")
-
-        except Exception as err:
-            _LOGGER.error(f"❌ Error during immediate fetch: {err}")
-            # Don't fail completely, continue with normal operation
-
-        # Continue with normal first refresh
-        await super().async_config_entry_first_refresh()
-
-    async def _force_fetch_both_days(self) -> Dict[str, Any]:
-        """Force fetch both today and tomorrow data immediately."""
-        now = datetime.now()
-        _LOGGER.info(f"🚀 FORCE FETCH: Getting both today and tomorrow data (TGE publishes DAILY including {now.strftime('%A')})")
-
-        try:
-            # Always try to fetch today's data
-            _LOGGER.info(f"📡 FORCE FETCH: Getting today's data ({now.date()})...")
-            today_data = await self._fetch_day_data(now, "today")
-
-            # Always try to fetch tomorrow's data - TGE PUBLISHES DAILY!
-            tomorrow = now + timedelta(days=1)
-            _LOGGER.info(f"📡 FORCE FETCH: Getting tomorrow's data ({tomorrow.date()} - {tomorrow.strftime('%A')})...")
-            tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
-
-            # Update tomorrow data status
-            if tomorrow_data:
-                _LOGGER.info(f"🎉 FORCE FETCH: Tomorrow's data ({tomorrow.strftime('%A')}) is available!")
-                self.tomorrow_data_available = True
-                self.last_tomorrow_check = now
-            else:
-                _LOGGER.info(f"📅 FORCE FETCH: Tomorrow's data ({tomorrow.strftime('%A')}) not available yet")
-                self.tomorrow_data_available = False
-
-            result = {
-                "today": today_data,
-                "tomorrow": tomorrow_data,
-                "last_update": now,
-                "startup_fetch": True,
-                "tomorrow_data_status": {
-                    "available": self.tomorrow_data_available,
-                    "last_check": self.last_tomorrow_check,
-                    "expected_time": "12:00-16:00 DAILY (including weekends) - Smart URL finding!",
-                    "force_fetched": True,
-                    "tomorrow_day": tomorrow.strftime('%A')
-                }
-            }
-
-            return result
-
-        except Exception as err:
-            _LOGGER.error(f"❌ FORCE FETCH failed: {err}")
-            return {}
-
-    async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from TGE - PRESERVE EXISTING TOMORROW DATA."""
-        if not REQUIRED_LIBRARIES_AVAILABLE:
-            raise UpdateFailed(f"Required libraries not available: {IMPORT_ERROR}")
-
+    async def async_config_entry_first_refresh(self):
         try:
             now = datetime.now()
-            update_reason = "scheduled"
+            today_data = await self._fetch(now, "today")
+            tomorrow_data = await self._fetch(now + timedelta(days=1), "tomorrow")
+            self.data = {"today": today_data, "tomorrow": tomorrow_data, "last_update": now}
+        except Exception as e:
+            _LOGGER.error(f"Fetch error: {e}")
+        await super().async_config_entry_first_refresh()
 
-            # Check if this is an hour boundary update
-            if self.last_hour_updated != now.hour:
-                update_reason = f"hour_change ({self.last_hour_updated} → {now.hour})"
-                self.last_hour_updated = now.hour
-
-            _LOGGER.info(f"🔄 Regular update cycle at {now.strftime('%H:%M:%S')} on {now.strftime('%A')} ({update_reason})")
-
-            # Always fetch today's data
-            _LOGGER.debug("📡 Fetching today's data")
-            today_data = await self._fetch_day_data(now, "today")
-
-            # Handle tomorrow data - PRESERVE EXISTING OR FETCH NEW
-            tomorrow_data = await self._handle_tomorrow_data(now)
-
-            tomorrow = now + timedelta(days=1)
-            result = {
-                "today": today_data,
-                "tomorrow": tomorrow_data,
-                "last_update": now,
-                "startup_fetch": False,
-                "update_reason": update_reason,
-                "tomorrow_data_status": {
-                    "available": tomorrow_data is not None,
-                    "last_check": self.last_tomorrow_check,
-                    "expected_time": "12:00-16:00 DAILY (including weekends) - Smart URL finding!",
-                    "force_fetched": False,
-                    "tomorrow_day": tomorrow.strftime('%A')
-                }
-            }
-
-            # Log summary
-            today_status = "✅ Available" if today_data else "❌ Not available"
-            tomorrow_status = "✅ Available" if tomorrow_data else "❌ Not available"
-            _LOGGER.info(f"✅ Regular update complete: Today {today_status}, Tomorrow {tomorrow_status}")
-
-            return result
-
-        except Exception as err:
-            _LOGGER.error(f"❌ Error in regular update: {err}")
-            raise UpdateFailed(f"Error communicating with TGE API: {err}")
-
-    async def _handle_tomorrow_data(self, now: datetime) -> Optional[Dict[str, Any]]:
-        """Handle tomorrow data - preserve existing or fetch new."""
-
-        # Check if we should try to fetch new tomorrow data
-        should_fetch_tomorrow = self._should_fetch_tomorrow_data(now)
-
-        if should_fetch_tomorrow:
-            # Try to fetch new tomorrow data
-            tomorrow = now + timedelta(days=1)
-            _LOGGER.info(f"📡 Attempting to fetch tomorrow's data ({tomorrow.date()} - {tomorrow.strftime('%A')}) at {now.strftime('%H:%M:%S')}")
-
-            new_tomorrow_data = await self._fetch_day_data(tomorrow, "tomorrow")
-
-            if new_tomorrow_data:
-                if not self.tomorrow_data_available:
-                    _LOGGER.info(f"✅ Tomorrow's data ({tomorrow.strftime('%A')}) became available at {now.strftime('%H:%M:%S')}")
-                self.tomorrow_data_available = True
-                self.last_tomorrow_check = now
-                return new_tomorrow_data
-            else:
-                # Failed to fetch - preserve existing if we have it
-                if self.data and self.data.get("tomorrow"):
-                    _LOGGER.debug(f"📅 Failed to fetch new tomorrow data, preserving existing")
-                    return self.data.get("tomorrow")
-                else:
-                    if now.hour >= 12:  # Log if we expect data to be available (FROM 12:00!)
-                        _LOGGER.info(f"📅 Tomorrow's data ({tomorrow.strftime('%A')}) not yet available at {now.strftime('%H:%M:%S')}")
-                    self.tomorrow_data_available = False
-                    return None
-        else:
-            # Not fetching new data - preserve existing if we have it
-            if self.data and self.data.get("tomorrow"):
-                _LOGGER.debug("📅 Preserving existing tomorrow data (outside fetch window)")
-                return self.data.get("tomorrow")
-            else:
-                _LOGGER.debug("⏭️ Skipping tomorrow's data fetch (outside publication hours)")
-                return None
-
-    def _should_fetch_tomorrow_data(self, now: datetime) -> bool:
-        """Determine if we should fetch tomorrow's data - STARTS FROM 12:00."""
-        current_time = now.time()
-
-        # Before 12:00 - don't fetch (too early) - CHANGED FROM 13:30!
-        if current_time < time(12, 0):
-            return False
-
-        # 12:00-16:00 - ACTIVE FETCH WINDOW - always try (EXTENDED FROM 12:00!)
-        if time(12, 0) <= current_time <= time(16, 0):
-            return True
-
-        # 16:00-22:00 - EXTENDED WINDOW - only if we don't have data yet  
-        if time(16, 0) < current_time < time(22, 0):
-            return not self.tomorrow_data_available
-
-        # After 22:00 - too late, don't fetch
-        return False
-
-    async def _fetch_day_data(self, date: datetime, day_type: str) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific day with SMART URL FINDING."""
+    async def _async_update_data(self):
+        if not LIBS_OK:
+            raise UpdateFailed(f"Libs: {IMPORT_ERR}")
         try:
-            # Generate possible URLs for inconsistent TGE naming
-            possible_urls = self._generate_possible_urls(date)
+            now = datetime.now()
+            today = await self._fetch(now, "today")
+            tomorrow = await self._fetch_tomorrow(now)
+            return {"today": today, "tomorrow": tomorrow, "last_update": now}
+        except Exception as e:
+            raise UpdateFailed(str(e))
 
-            _LOGGER.debug(f"🌐 Fetching {day_type} data ({date.strftime('%A')}) - trying {len(possible_urls)} URL variations")
-
-            response = await self.hass.async_add_executor_job(
-                self._try_download_with_fallback, date
-            )
-
-            if response is None:
-                _LOGGER.debug(f"🚫 No valid file found for {day_type} ({date.date()} - {date.strftime('%A')}) after trying all URL variations")
-                return None
-
-            result = await self.hass.async_add_executor_job(
-                self._parse_excel_data, response, date
-            )
-
-            if result:
-                hours_count = len(result.get("hourly_data", []))
-                avg_price = result.get("average_price", 0)
-                negative_hours = result.get("negative_hours", 0)
-
-                if negative_hours > 0:
-                    _LOGGER.info(f"✅ {day_type.title()} data ({date.strftime('%A')}) loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh, ⚠️ {negative_hours} negative price hours")
-                else:
-                    _LOGGER.info(f"✅ {day_type.title()} data ({date.strftime('%A')}) loaded: {hours_count} hours, avg {avg_price:.2f} PLN/MWh")
-
-            return result
-
-        except DataNotAvailableError as dna:
-            _LOGGER.info(f"📅 {day_type.title()} data ({date.strftime('%A')}) not published yet: {dna}")
-            return None
-        except Exception as err:
-            _LOGGER.error(f"❌ Unexpected error fetching {day_type} data ({date.strftime('%A')}): {err}")
-            return None
-
-    def _try_download_with_fallback(self, date: datetime) -> Optional[bytes]:
-        """Try downloading file with multiple URL attempts for inconsistent TGE naming."""
-        possible_urls = self._generate_possible_urls(date)
-
-        for attempt, url in enumerate(possible_urls, 1):
-            try:
-                _LOGGER.debug(f"🌐 Attempt {attempt}/{len(possible_urls)}: {url}")
-                response = requests.get(url, timeout=30)
-
-                if response.status_code == 200 and len(response.content) > 100:
-                    _LOGGER.info(f"✅ File found at attempt {attempt}/{len(possible_urls)}: {url.split('/')[-1]}")
-                    return response.content
-                else:
-                    _LOGGER.debug(f"❌ Attempt {attempt} failed: HTTP {response.status_code}, size {len(response.content)} bytes")
-
-            except requests.RequestException as err:
-                _LOGGER.debug(f"❌ Attempt {attempt} failed: {err}")
-                continue
-
-        # All attempts failed
-        _LOGGER.warning(f"⚠️ All {len(possible_urls)} URL attempts failed for {date.date()}")
+    async def _fetch_tomorrow(self, now):
+        t = now.time()
+        should = time(12,0) <= t <= time(16,0) or (time(16,0) < t < time(22,0) and not self.tomorrow_available)
+        if should:
+            data = await self._fetch(now + timedelta(days=1), "tomorrow")
+            if data:
+                self.tomorrow_available = True
+                return data
+            elif self.data and self.data.get("tomorrow"):
+                return self.data.get("tomorrow")
+        elif self.data and self.data.get("tomorrow"):
+            return self.data.get("tomorrow")
         return None
 
-    def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel data from TGE RDN file with proper validation."""
-
-        def validate_excel_file(content: bytes) -> None:
-            """Validate if content is a valid Excel file."""
-            if len(content) < 100:
-                raise DataNotAvailableError(f"File too small ({len(content)} bytes)")
-
-            # Check for HTML content (various ways)
-            content_lower = content[:1000].lower()
-            html_indicators = [b'<html', b'<!doctype', b'<head>', b'<body>', b'<title>', b'<meta', b'<div', b'<p>']
-            for indicator in html_indicators:
-                if indicator in content_lower:
-                    raise DataNotAvailableError(f"Server returned HTML instead of Excel (contains {indicator.decode()})")
-
-            # Check for ZIP signature (Excel files are ZIP archives)
-            if not content.startswith(b'PK'):
-                raise DataNotAvailableError(f"File doesn't have Excel format (starts with: {content[:10]})")
-
-            # Check for error indicators
-            error_indicators = [b'404', b'not found', b'error', b'exception', b'access denied', b'forbidden']
-            for indicator in error_indicators:
-                if indicator in content_lower:
-                    raise DataNotAvailableError(f"Server returned error page (contains '{indicator.decode()}')")
-
+    async def _fetch(self, dt, typ):
         try:
-            # Validate file before processing
-            validate_excel_file(file_content)
-
-            # Use BytesIO and specify engine
-            excel_file = io.BytesIO(file_content)
-            df = pd.read_excel(excel_file, sheet_name="WYNIKI", header=None, engine="openpyxl")
-
-            # Parse hourly data
-            hourly_data = []
-            negative_hours = 0
-            time_column = 8   # Column I
-            price_column = 10 # Column K
-
-            for index, row in df.iterrows():
-                time_value = row[time_column] if len(row) > time_column else None
-                price_value = row[price_column] if len(row) > price_column else None
-
-                if pd.notna(time_value) and isinstance(time_value, str):
-                    # Format: "01-10-25_H01"  
-                    if re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}', str(time_value)):
-                        # Accept any numeric price value (including negative and zero)
-                        if pd.notna(price_value) and isinstance(price_value, (int, float)):
-                            hour = int(time_value.split('_H')[1])
-                            price = float(price_value)
-
-                            # Track negative prices
-                            if price < 0:
-                                negative_hours += 1
-                                _LOGGER.debug(f"Negative price detected: Hour {hour}, Price {price:.2f} PLN/MWh")
-
-                            # Create datetime for specific hour
-                            hour_datetime = date.replace(
-                                hour=hour-1,  # TGE uses 1-24, Python 0-23
-                                minute=0,
-                                second=0,
-                                microsecond=0
-                            )
-
-                            hourly_data.append({
-                                'time': hour_datetime.isoformat(),
-                                'hour': hour,
-                                'price': price,  # Keep original price (including negative and zero)
-                                'is_negative': price < 0
-                            })
-
-            # Sort by hour
-            hourly_data.sort(key=lambda x: x['hour'])
-
-            if not hourly_data:
-                raise DataNotAvailableError("Excel file contains no valid price data")
-
-            # Calculate statistics (using original prices including negative)
-            prices = [item['price'] for item in hourly_data]
-            positive_prices = [p for p in prices if p >= 0]  # For positive-only stats
-            average_price = sum(prices) / len(prices) if prices else 0
-
-            return {
-                "date": date.date().isoformat(),
-                "hourly_data": hourly_data,
-                "average_price": average_price,
-                "min_price": min(prices) if prices else 0,
-                "max_price": max(prices) if prices else 0,
-                "total_hours": len(hourly_data),
-                "negative_hours": negative_hours,
-                "positive_average": sum(positive_prices) / len(positive_prices) if positive_prices else 0,
-                "has_negative_prices": negative_hours > 0
-            }
-
+            content = await self.hass.async_add_executor_job(self._download, dt)
+            if not content:
+                return None
+            result = await self.hass.async_add_executor_job(self._parse, content, dt)
+            if result:
+                _LOGGER.info(f"✅ {typ} loaded: {len(result.get('hourly_data',[]))}h")
+            return result
         except DataNotAvailableError:
-            # Re-raise custom exception to be handled in _fetch_day_data
-            raise
-        except Exception as err:
-            # Real parsing errors (this shouldn't happen with valid Excel files)
-            _LOGGER.error(f"❌ Unexpected error parsing Excel data for {date.date()}: {err}")
-            raise
+            return None
+        except Exception as e:
+            _LOGGER.error(f"Error {typ}: {e}")
+            return None
+
+    def _download(self, dt):
+        urls = self._gen_urls(dt)
+        for i, url in enumerate(urls, 1):
+            try:
+                r = requests.get(url, timeout=30)
+                if r.status_code == 200 and len(r.content) > 100:
+                    _LOGGER.info(f"✅ Found at attempt {i}/9: {url.split('/')[-1]}")
+                    return r.content
+            except:
+                continue
+        _LOGGER.warning(f"⚠️ All 9 attempts failed for {dt.date()}")
+        return None
+
+    def _parse(self, content, dt):
+        if len(content) < 100 or not content.startswith(b'PK'):
+            raise DataNotAvailableError("Invalid")
+        df = pd.read_excel(io.BytesIO(content), sheet_name="WYNIKI", header=None, engine="openpyxl")
+        hourly = []
+        for _, row in df.iterrows():
+            tv = row[8] if len(row) > 8 else None
+            pv = row[10] if len(row) > 10 else None
+            if pd.notna(tv) and isinstance(tv, str) and re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}', str(tv)):
+                if pd.notna(pv) and isinstance(pv, (int, float)):
+                    h = int(tv.split('_H')[1])
+                    p = float(pv)
+                    hdt = dt.replace(hour=h-1, minute=0, second=0, microsecond=0)
+                    hourly.append({'time': hdt.isoformat(), 'hour': h, 'price': p, 'is_negative': p < 0})
+        hourly.sort(key=lambda x: x['hour'])
+        if not hourly:
+            raise DataNotAvailableError("No data")
+        prices = [x['price'] for x in hourly]
+        return {
+            "date": dt.date().isoformat(),
+            "hourly_data": hourly,
+            "average_price": sum(prices) / len(prices),
+            "min_price": min(prices),
+            "max_price": max(prices),
+            "total_hours": len(hourly),
+            "negative_hours": sum(1 for p in prices if p < 0),
+        }
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor with ALL FEATURES + SMART URL FINDING."""
-
-    def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._coordinator = coordinator
+    def __init__(self, coord, entry, stype):
+        super().__init__(coord)
+        self._coord = coord
         self._entry = entry
-        self._sensor_type = sensor_type
-        self._attr_name = f"{DEFAULT_NAME} {sensor_type.replace('_', ' ').title()}"
-        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{sensor_type}"
-        self._last_state_hour = None
-
-        # Configuration from entry
+        self._stype = stype
+        self._attr_name = f"{DEFAULT_NAME} {stype.replace('_', ' ').title()}"
+        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{stype}"
+        self._last_hour = None
         self._unit = entry.options.get(CONF_UNIT, DEFAULT_UNIT)
-
-        # Fees/tariffs and VAT (PLN/MWh)
-        self._exchange_fee = entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
-        self._vat_rate = entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
-        self._dist_low = entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
-        self._dist_med = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
-        self._dist_high = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
+        self._fee = entry.options.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)
+        self._vat = entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
+        self._dl = entry.options.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)
+        self._dm = entry.options.get(CONF_DIST_MED, DEFAULT_DIST_MED)
+        self._dh = entry.options.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)
 
     @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return REQUIRED_LIBRARIES_AVAILABLE and super().available
+    def available(self):
+        return LIBS_OK and super().available
 
     @property
-    def native_unit_of_measurement(self) -> str:
-        """Return the unit of measurement."""
+    def native_unit_of_measurement(self):
         return self._unit
 
     @property
-    def should_poll(self) -> bool:
-        """Return if polling is needed - Enable polling for guaranteed updates."""
+    def should_poll(self):
         return True
 
     @property
-    def state(self) -> Optional[float]:
-        """Return the state of the sensor with hour tracking."""
-        if not REQUIRED_LIBRARIES_AVAILABLE:
+    def state(self):
+        if not LIBS_OK or not self.coordinator.data:
             return None
-
-        if not self.coordinator.data:
-            return None
-
         try:
-            current_hour = datetime.now().hour
-
-            # Log hour changes for current price sensor
-            if (self._sensor_type == "current_price" and 
-                self._last_state_hour is not None and 
-                self._last_state_hour != current_hour):
-                _LOGGER.info(f"⏰ Current price sensor: Hour changed {self._last_state_hour} → {current_hour}")
-
-            self._last_state_hour = current_hour
-
-            value = self._calculate_value()
-            return value
-
-        except Exception as err:
-            _LOGGER.error(f"Error calculating sensor value: {err}")
+            h = datetime.now().hour
+            if self._stype == "current_price" and self._last_hour and self._last_hour != h:
+                _LOGGER.info(f"⏰ Price: {self._last_hour} → {h}")
+            self._last_hour = h
+            return self._calc()
+        except:
             return None
 
-    def _get_distribution_rate(self, when) -> float:
-        """Return distribution rate [PLN/MWh] based on local time, season and POLISH HOLIDAYS."""
+    def _get_dist(self, when):
         try:
             local = when.astimezone() if hasattr(when, 'astimezone') else when
-        except Exception:
+        except:
             local = when
-
-        month = local.month
-        day = local.day
-        hour = local.hour
-        weekday = local.weekday()
-
-        # Check if it's weekend (Saturday=5, Sunday=6)
-        is_weekend = weekday in (5, 6)
-
-        # Check if it's a Polish national holiday
-        is_polish_holiday = self._is_polish_holiday(local.date())
-
-        # Weekend or holiday = lowest rate all day
-        if is_weekend or is_polish_holiday:
-            if is_polish_holiday:
-                _LOGGER.debug(f"🇵🇱 Polish holiday detected: {local.date()} - using lowest distribution rate")
-            return self._dist_low
-
-        # Weekday - normal tariff bands
-        # Determine season: summer (April-September) vs winter (October-March)
-        is_summer = month in (4, 5, 6, 7, 8, 9)
-
-        # Map hours to tariff bands
-        if is_summer:
-            # Summer: morning peak (7-13), evening peak (19-22), off-peak (13-19 and 22-7)
-            if 7 <= hour < 13:
-                return self._dist_med
-            elif 19 <= hour < 22:
-                return self._dist_high
-            else:
-                return self._dist_low
+        m, h, wd = local.month, local.hour, local.weekday()
+        if wd in (5,6) or self._is_holiday(local.date()):
+            return self._dl
+        summer = m in (4,5,6,7,8,9)
+        if summer:
+            if 7 <= h < 13: return self._dm
+            elif 19 <= h < 22: return self._dh
+            else: return self._dl
         else:
-            # Winter: morning peak (7-13), evening peak (16-21), off-peak (13-16 and 21-7)
-            if 7 <= hour < 13:
-                return self._dist_med
-            elif 16 <= hour < 21:
-                return self._dist_high
-            else:
-                return self._dist_low
+            if 7 <= h < 13: return self._dm
+            elif 16 <= h < 21: return self._dh
+            else: return self._dl
 
-    def _is_polish_holiday(self, date) -> bool:
-        """Check if date is a Polish national holiday."""
-        year = date.year
-        month = date.month
-        day = date.day
-
-        # Fixed holidays
-        fixed_holidays = [
-            (1, 1), (1, 6), (5, 1), (5, 3), (8, 15),
-            (11, 1), (11, 11), (12, 25), (12, 26),
-        ]
-
-        if (month, day) in fixed_holidays:
+    def _is_holiday(self, d):
+        fixed = [(1,1),(1,6),(5,1),(5,3),(8,15),(11,1),(11,11),(12,25),(12,26)]
+        if (d.month, d.day) in fixed:
             return True
+        e = self._easter(d.year)
+        return d in [e, e+timedelta(1), e+timedelta(49), e+timedelta(60)]
 
-        # Calculate Easter Sunday for moveable holidays
-        easter_date = self._calculate_easter(year)
-
-        # Moveable holidays relative to Easter
-        moveable_holidays = [
-            easter_date,
-            easter_date + timedelta(days=1),
-            easter_date + timedelta(days=49),
-            easter_date + timedelta(days=60),
-        ]
-
-        return date in moveable_holidays
-
-    def _calculate_easter(self, year: int):
-        """Calculate Easter Sunday for given year using Gregorian algorithm."""
-        a = year % 19
-        b = year // 100
-        c = year % 100
+    def _easter(self, y):
+        a = y % 19
+        b = y // 100
+        c = y % 100
         d = b // 4
         e = b % 4
         f = (b + 8) // 25
         g = (b - f + 1) // 3
-        h = (19 * a + b - d - g + 15) % 30
+        h = (19*a + b - d - g + 15) % 30
         i = c // 4
         k = c % 4
-        l = (32 + 2 * e + 2 * i - h - k) % 7
-        m = (a + 11 * h + 22 * l) // 451
-        month = (h + l - 7 * m + 114) // 31
-        day = ((h + l - 7 * m + 114) % 31) + 1
+        l = (32 + 2*e + 2*i - h - k) % 7
+        m = (a + 11*h + 22*l) // 451
+        mon = (h + l - 7*m + 114) // 31
+        day = ((h + l - 7*m + 114) % 31) + 1
+        return date(y, mon, day)
 
-        return date(year, month, day)
+    def _total_price(self, base, when):
+        dist = self._get_dist(when)
+        eff = max(0, base)
+        ewv = float(eff) * (1.0 + float(self._vat))
+        tot = ewv + float(self._fee) + float(dist)
+        return {"total_gross": tot, "orig": base, "eff": eff, "neg": base < 0, "dist": dist}
 
-    def _compute_total_price(self, base_pln_mwh: float, when, debug_info: bool = False) -> Dict[str, Any]:
-        """Compute total price with PROSUMER NEGATIVE PRICE HANDLING."""
-        dist_rate = self._get_distribution_rate(when)
+    def _conv(self, val):
+        if self._unit == UNIT_PLN_KWH: return val / 1000
+        elif self._unit == UNIT_EUR_MWH: return val / 4.3
+        elif self._unit == UNIT_EUR_KWH: return val / 4.3 / 1000
+        return val
 
-        is_weekend = when.weekday() in (5, 6)
-        is_polish_holiday = self._is_polish_holiday(when.date())
-
-        # PROSUMER NEGATIVE PRICE HANDLING
-        is_negative = base_pln_mwh < 0
-        effective_energy_price = max(0, base_pln_mwh)
-
-        # VAT applied only to effective energy price (0 if negative)
-        energy_with_vat = float(effective_energy_price) * (1.0 + float(self._vat_rate))
-
-        # Add fees and distribution (always applied)
-        total_gross = energy_with_vat + float(self._exchange_fee) + float(dist_rate)
-
-        if debug_info or is_negative or is_polish_holiday:
-            if is_negative:
-                _LOGGER.debug(f"Negative price handling: TGE={base_pln_mwh:.2f} → Energy=0, Distribution={dist_rate:.2f}, Total={total_gross:.2f} PLN/MWh")
-            if is_polish_holiday:
-                _LOGGER.debug(f"🇵🇱 Polish holiday pricing: Distribution={dist_rate:.2f} PLN/MWh (lowest rate)")
-
-        return {
-            "total_gross": total_gross,
-            "original_tge_price": base_pln_mwh,
-            "effective_energy_price": effective_energy_price,
-            "is_negative_hour": is_negative,
-            "is_weekend": is_weekend,
-            "is_polish_holiday": is_polish_holiday,
-            "energy_with_vat": energy_with_vat,
-            "distribution": dist_rate,
-            "exchange_fee": self._exchange_fee,
-            "vat_rate": self._vat_rate
-        }
-
-    def _convert_units(self, value: float) -> float:
-        """Convert price units."""
-        if self._unit == UNIT_PLN_KWH:
-            return value / 1000
-        elif self._unit == UNIT_EUR_MWH:
-            return value / 4.3
-        elif self._unit == UNIT_EUR_KWH:
-            return value / 4.3 / 1000
-
-        return value
-
-    def _calculate_value(self) -> Optional[float]:
-        """Calculate sensor value based on type."""
-        data = self.coordinator.data
-        now = datetime.now()
-
-        if self._sensor_type == "current_price":
-            return self._get_total_current_price(data, now)
-        elif self._sensor_type == "next_hour_price":
-            return self._get_total_next_hour_price(data, now)
-        elif self._sensor_type == "daily_average":
-            return self._get_total_daily_average(data, now)
-
+    def _calc(self):
+        d = self.coordinator.data
+        n = datetime.now()
+        if self._stype == "current_price":
+            return self._curr(d, n)
+        elif self._stype == "next_hour_price":
+            return self._next(d, n)
+        elif self._stype == "daily_average":
+            return self._avg(d, n)
         return None
 
-    def _get_total_current_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get current hour price with all fees and VAT - NEGATIVE PRICE HANDLING."""
-        today_data = data.get("today")
-        if not today_data or not today_data.get("hourly_data"):
+    def _curr(self, d, n):
+        td = d.get("today")
+        if not td or not td.get("hourly_data"):
             return None
-
-        current_hour = now.hour + 1
-
-        for item in today_data["hourly_data"]:
-            if item["hour"] == current_hour:
-                price_calc = self._compute_total_price(item["price"], now)
-                return self._convert_units(price_calc["total_gross"])
-
+        h = n.hour + 1
+        for x in td["hourly_data"]:
+            if x["hour"] == h:
+                c = self._total_price(x["price"], n)
+                return self._conv(c["total_gross"])
         return None
 
-    def _get_total_next_hour_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get next hour price with all fees and VAT - NEGATIVE PRICE HANDLING."""
-        next_hour = now.hour + 2
-
-        if next_hour > 24:
-            tomorrow_data = data.get("tomorrow")
-            if not tomorrow_data or not tomorrow_data.get("hourly_data"):
+    def _next(self, d, n):
+        nh = n.hour + 2
+        if nh > 24:
+            tm = d.get("tomorrow")
+            if not tm:
                 return None
-
-            next_day_time = now + timedelta(hours=1)
-            for item in tomorrow_data["hourly_data"]:
-                if item["hour"] == next_hour - 24:
-                    price_calc = self._compute_total_price(item["price"], next_day_time)
-                    return self._convert_units(price_calc["total_gross"])
+            nt = n + timedelta(hours=1)
+            for x in tm.get("hourly_data", []):
+                if x["hour"] == nh - 24:
+                    c = self._total_price(x["price"], nt)
+                    return self._conv(c["total_gross"])
         else:
-            today_data = data.get("today")
-            if not today_data or not today_data.get("hourly_data"):
+            td = d.get("today")
+            if not td:
                 return None
-
-            next_hour_time = now + timedelta(hours=1)
-            for item in today_data["hourly_data"]:
-                if item["hour"] == next_hour:
-                    price_calc = self._compute_total_price(item["price"], next_hour_time)
-                    return self._convert_units(price_calc["total_gross"])
-
+            nt = n + timedelta(hours=1)
+            for x in td.get("hourly_data", []):
+                if x["hour"] == nh:
+                    c = self._total_price(x["price"], nt)
+                    return self._conv(c["total_gross"])
         return None
 
-    def _get_total_daily_average(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
-        """Get daily average price with all fees and VAT - NEGATIVE PRICE HANDLING."""
-        today_data = data.get("today")
-        if not today_data:
+    def _avg(self, d, n):
+        td = d.get("today")
+        if not td:
             return None
-
-        total_prices = []
-        for item in today_data.get('hourly_data', []):
-            hour_dt = now.replace(
-                hour=(item['hour']-1) % 24, 
-                minute=0, 
-                second=0, 
-                microsecond=0
-            )
-            price_calc = self._compute_total_price(item['price'], hour_dt)
-            total_prices.append(price_calc["total_gross"])
-
-        if not total_prices:
+        tots = []
+        for x in td.get('hourly_data', []):
+            hdt = n.replace(hour=(x['hour']-1) % 24, minute=0, second=0, microsecond=0)
+            c = self._total_price(x['price'], hdt)
+            tots.append(c["total_gross"])
+        if not tots:
             return None
-
-        average_total = sum(total_prices) / len(total_prices)
-        return self._convert_units(average_total)
+        return self._conv(sum(tots) / len(tots))
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes - WITH SMART URL FINDING INFO."""
-        if not REQUIRED_LIBRARIES_AVAILABLE:
-            return {"error": "Required libraries not available"}
-
-        if not self.coordinator.data:
+    def extra_state_attributes(self):
+        if not LIBS_OK or not self.coordinator.data:
             return {}
-
-        now = datetime.now()
-        today_data = self.coordinator.data.get("today")
-        tomorrow_data = self.coordinator.data.get("tomorrow")
-
-        # Check holidays/weekends
-        today_is_weekend = now.weekday() in (5, 6)
-        today_is_holiday = self._is_polish_holiday(now.date())
-        tomorrow = now + timedelta(days=1)
-        tomorrow_is_weekend = tomorrow.weekday() in (5, 6)
-        tomorrow_is_holiday = self._is_polish_holiday(tomorrow.date())
-
-        # Current hour price calc
-        current_price_calc = None
-        if today_data and today_data.get("hourly_data"):
-            current_hour = now.hour + 1
-            for item in today_data["hourly_data"]:
-                if item["hour"] == current_hour:
-                    current_price_calc = self._compute_total_price(item["price"], now, debug_info=True)
-                    break
-
-        data = self.coordinator.data
-        tomorrow_status = data.get("tomorrow_data_status", {})
-
-        attributes = {
-            "last_update": data.get("last_update"),
-            "last_update_reason": data.get("update_reason", "unknown"),
-            "unit_raw": UNIT_PLN_MWH,
-            "unit_converted": self._unit,
-            "smart_url_finding": "Tries 9 filename variations for inconsistent TGE naming (_2, ost, _final, etc.)",
-            "pricing_formula": "max(0, TGE_price) × (1 + VAT) + exchange_fee + distribution_rate",
-            "negative_price_handling": "Prosumer: negative TGE price → 0 energy cost, still pay distribution",
-            "polish_holidays_support": "Weekends and Polish holidays use lowest distribution rate 24h",
-            "hourly_updates": "Guaranteed updates at hour boundaries (XX:00) for current price",
-            "tomorrow_check_window": "12:00-16:00 DAILY (starts from 12:00)",
-            "data_status": {
-                "today_available": today_data is not None,
-                "tomorrow_available": tomorrow_data is not None,
-                "today_hours": len(today_data.get("hourly_data", [])) if today_data else 0,
-                "tomorrow_hours": len(tomorrow_data.get("hourly_data", [])) if tomorrow_data else 0,
-                "tomorrow_expected_time": tomorrow_status.get("expected_time", "12:00-16:00 DAILY - Smart URL finding!"),
-                "today_is_weekend": today_is_weekend,
-                "today_is_polish_holiday": today_is_holiday,
-                "tomorrow_is_weekend": tomorrow_is_weekend,
-                "tomorrow_is_polish_holiday": tomorrow_is_holiday,
-                "current_hour": now.hour,
-                "last_state_hour": self._last_state_hour,
-            },
-            "current_hour_components": current_price_calc if current_price_calc else {
-                "error": "Current hour data not available"
-            }
+        return {
+            "smart_url_finding": "9 variations: _2, ost, _final, etc.",
+            "last_update": self.coordinator.data.get("last_update"),
+            "unit": self._unit,
+            "version": "1.6.1",
         }
-
-        # Add today prices
-        if today_data:
-            prices_today_gross = []
-            for item in today_data.get("hourly_data", []):
-                hour_dt = now.replace(hour=(item['hour']-1) % 24, minute=0, second=0, microsecond=0)
-                price_calc = self._compute_total_price(item['price'], hour_dt)
-                gross_price_converted = self._convert_units(price_calc["total_gross"])
-
-                prices_today_gross.append({
-                    'time': item['time'],
-                    'hour': item['hour'],
-                    'price_tge_original': item['price'],
-                    'price_energy_effective': price_calc["effective_energy_price"],
-                    'is_negative_hour': price_calc["is_negative_hour"],
-                    'is_weekend': price_calc["is_weekend"],
-                    'is_polish_holiday': price_calc["is_polish_holiday"],
-                    'price_gross': gross_price_converted,
-                    'price_gross_pln_mwh': price_calc["total_gross"],
-                    'components': {
-                        'energy_with_vat': price_calc["energy_with_vat"],
-                        'exchange_fee': price_calc["exchange_fee"],
-                        'distribution': price_calc["distribution"]
-                    }
-                })
-
-            gross_prices = [p['price_gross'] for p in prices_today_gross]
-
-            attributes.update({
-                "today_average": today_data.get("average_price"),
-                "today_min": today_data.get("min_price"),
-                "today_max": today_data.get("max_price"),
-                "prices_today_gross": prices_today_gross,
-                "today_average_gross": sum(gross_prices) / len(gross_prices) if gross_prices else None,
-            })
-
-        # Add tomorrow prices
-        if tomorrow_data:
-            prices_tomorrow_gross = []
-            tomorrow_date = now + timedelta(days=1)
-            for item in tomorrow_data.get("hourly_data", []):
-                hour_dt = tomorrow_date.replace(hour=(item['hour']-1) % 24, minute=0, second=0, microsecond=0)
-                price_calc = self._compute_total_price(item['price'], hour_dt)
-                gross_price_converted = self._convert_units(price_calc["total_gross"])
-
-                prices_tomorrow_gross.append({
-                    'time': item['time'],
-                    'hour': item['hour'],
-                    'price_tge_original': item['price'],
-                    'price_energy_effective': price_calc["effective_energy_price"],
-                    'is_negative_hour': price_calc["is_negative_hour"],
-                    'is_weekend': price_calc["is_weekend"],
-                    'is_polish_holiday': price_calc["is_polish_holiday"],
-                    'price_gross': gross_price_converted,
-                    'price_gross_pln_mwh': price_calc["total_gross"],
-                    'components': {
-                        'energy_with_vat': price_calc["energy_with_vat"],
-                        'exchange_fee': price_calc["exchange_fee"],
-                        'distribution': price_calc["distribution"]
-                    }
-                })
-
-            gross_prices_tomorrow = [p['price_gross'] for p in prices_tomorrow_gross]
-
-            attributes.update({
-                "tomorrow_average": tomorrow_data.get("average_price"),
-                "tomorrow_min": tomorrow_data.get("min_price"),
-                "tomorrow_max": tomorrow_data.get("max_price"),
-                "prices_tomorrow_gross": prices_tomorrow_gross,
-                "tomorrow_average_gross": sum(gross_prices_tomorrow) / len(gross_prices_tomorrow) if gross_prices_tomorrow else None,
-            })
-
-        return attributes

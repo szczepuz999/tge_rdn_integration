@@ -1,6 +1,6 @@
 {
   "name": "TGE RDN Energy Prices",
-  "hacs": "1.6.0",
+  "hacs": "1.6.1",
   "domains": [
     "sensor"
   ],
