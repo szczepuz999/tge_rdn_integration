@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform - WITH EARLIER TOMORROW DATA CHECK FROM 12:00."""
+"""TGE RDN sensor platform - WITH SMART URL FINDING FOR INCONSISTENT TGE NAMING."""
 import logging
 import asyncio
 import io
@@ -114,7 +114,7 @@ async def async_setup_entry(
         _LOGGER.warning("⚠️ TGE RDN Integration started but no data available yet")
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching TGE RDN data - WITH EARLIER TOMORROW DATA CHECK FROM 12:00."""
+    """Class to manage fetching TGE RDN data - WITH SMART URL FINDING."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize with hour tracking."""
@@ -183,6 +183,29 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Normal hours - hour-aligned interval")
             return 1800  # 30 minutes
 
+    def _generate_possible_urls(self, date: datetime) -> List[str]:
+        """Generate list of possible URLs for given date - TGE uses inconsistent naming!"""
+        year = date.year
+        month = date.month
+        day = date.day
+
+        base_url = f"https://tge.pl/pub/TGE/A_SDAC%20{year}/RDN/Raport_RDN_dzie_dostawy_delivery_day_{year}_{month:02d}_{day:02d}"
+
+        # Try multiple filename variations (TGE is inconsistent!)
+        possible_urls = [
+            f"{base_url}.xlsx",           # Standard (first try)
+            f"{base_url}_2.xlsx",          # Version 2 (common)
+            f"{base_url}_3.xlsx",          # Version 3
+            f"{base_url}_4.xlsx",          # Version 4
+            f"{base_url}ost.xlsx",         # "ostateczna" without underscore
+            f"{base_url}_ost.xlsx",        # "ostateczna" with underscore
+            f"{base_url}_final.xlsx",      # Final version (English)
+            f"{base_url}_v2.xlsx",         # Version notation v2
+            f"{base_url}_v3.xlsx",         # Version notation v3
+        ]
+
+        return possible_urls
+
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh with IMMEDIATE FETCH of both days."""
         _LOGGER.info("🔄 Starting first refresh with immediate fetch...")
@@ -240,7 +263,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "tomorrow_data_status": {
                     "available": self.tomorrow_data_available,
                     "last_check": self.last_tomorrow_check,
-                    "expected_time": "12:00-16:00 DAILY (including weekends) - STARTS FROM 12:00!",
+                    "expected_time": "12:00-16:00 DAILY (including weekends) - Smart URL finding!",
                     "force_fetched": True,
                     "tomorrow_day": tomorrow.strftime('%A')
                 }
@@ -285,7 +308,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 "tomorrow_data_status": {
                     "available": tomorrow_data is not None,
                     "last_check": self.last_tomorrow_check,
-                    "expected_time": "12:00-16:00 DAILY (including weekends) - STARTS FROM 12:00!",
+                    "expected_time": "12:00-16:00 DAILY (including weekends) - Smart URL finding!",
                     "force_fetched": False,
                     "tomorrow_day": tomorrow.strftime('%A')
                 }
@@ -360,22 +383,19 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         return False
 
     async def _fetch_day_data(self, date: datetime, day_type: str) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific day."""
+        """Fetch data for specific day with SMART URL FINDING."""
         try:
-            url = TGE_URL_PATTERN.format(
-                year=date.year,
-                month=date.month,
-                day=date.day
-            )
+            # Generate possible URLs for inconsistent TGE naming
+            possible_urls = self._generate_possible_urls(date)
 
-            _LOGGER.debug(f"🌐 Fetching {day_type} data ({date.strftime('%A')}) from URL: {url}")
+            _LOGGER.debug(f"🌐 Fetching {day_type} data ({date.strftime('%A')}) - trying {len(possible_urls)} URL variations")
 
             response = await self.hass.async_add_executor_job(
-                self._download_file, url
+                self._try_download_with_fallback, date
             )
 
             if response is None:
-                _LOGGER.debug(f"🚫 No HTTP response for {day_type} ({date.date()} - {date.strftime('%A')})")
+                _LOGGER.debug(f"🚫 No valid file found for {day_type} ({date.date()} - {date.strftime('%A')}) after trying all URL variations")
                 return None
 
             result = await self.hass.async_add_executor_job(
@@ -401,17 +421,28 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"❌ Unexpected error fetching {day_type} data ({date.strftime('%A')}): {err}")
             return None
 
-    def _download_file(self, url: str) -> Optional[bytes]:
-        """Download Excel file with timeout handling."""
-        try:
-            _LOGGER.debug(f"🌐 HTTP GET: {url}")
-            response = requests.get(url, timeout=30)
-            _LOGGER.debug(f"📊 HTTP response: {response.status_code}, {len(response.content)} bytes")
-            response.raise_for_status()
-            return response.content
-        except requests.RequestException as err:
-            _LOGGER.debug(f"🚫 HTTP request failed: {err}")
-            return None
+    def _try_download_with_fallback(self, date: datetime) -> Optional[bytes]:
+        """Try downloading file with multiple URL attempts for inconsistent TGE naming."""
+        possible_urls = self._generate_possible_urls(date)
+
+        for attempt, url in enumerate(possible_urls, 1):
+            try:
+                _LOGGER.debug(f"🌐 Attempt {attempt}/{len(possible_urls)}: {url}")
+                response = requests.get(url, timeout=30)
+
+                if response.status_code == 200 and len(response.content) > 100:
+                    _LOGGER.info(f"✅ File found at attempt {attempt}/{len(possible_urls)}: {url.split('/')[-1]}")
+                    return response.content
+                else:
+                    _LOGGER.debug(f"❌ Attempt {attempt} failed: HTTP {response.status_code}, size {len(response.content)} bytes")
+
+            except requests.RequestException as err:
+                _LOGGER.debug(f"❌ Attempt {attempt} failed: {err}")
+                continue
+
+        # All attempts failed
+        _LOGGER.warning(f"⚠️ All {len(possible_urls)} URL attempts failed for {date.date()}")
+        return None
 
     def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
         """Parse Excel data from TGE RDN file with proper validation."""
@@ -516,7 +547,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             raise
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
-    """TGE RDN sensor with GUARANTEED HOURLY UPDATES & POLISH HOLIDAYS & EARLIER TOMORROW CHECK."""
+    """TGE RDN sensor with ALL FEATURES + SMART URL FINDING."""
 
     def __init__(self, coordinator: TGERDNDataUpdateCoordinator, entry: ConfigEntry, sensor_type: str) -> None:
         """Initialize the sensor."""
@@ -526,7 +557,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._sensor_type = sensor_type
         self._attr_name = f"{DEFAULT_NAME} {sensor_type.replace('_', ' ').title()}"
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{sensor_type}"
-        self._last_state_hour = None  # Track when state was last calculated
+        self._last_state_hour = None
 
         # Configuration from entry
         self._unit = entry.options.get(CONF_UNIT, DEFAULT_UNIT)
@@ -589,8 +620,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         month = local.month
         day = local.day
-        hour = local.hour  # 0-23
-        weekday = local.weekday()  # 0=Monday, 6=Sunday
+        hour = local.hour
+        weekday = local.weekday()
 
         # Check if it's weekend (Saturday=5, Sunday=6)
         is_weekend = weekday in (5, 6)
@@ -612,19 +643,19 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if is_summer:
             # Summer: morning peak (7-13), evening peak (19-22), off-peak (13-19 and 22-7)
             if 7 <= hour < 13:
-                return self._dist_med  # morning peak
+                return self._dist_med
             elif 19 <= hour < 22:
-                return self._dist_high  # evening peak
+                return self._dist_high
             else:
-                return self._dist_low  # off-peak hours
+                return self._dist_low
         else:
             # Winter: morning peak (7-13), evening peak (16-21), off-peak (13-16 and 21-7)
             if 7 <= hour < 13:
-                return self._dist_med  # morning peak
+                return self._dist_med
             elif 16 <= hour < 21:
-                return self._dist_high  # evening peak
+                return self._dist_high
             else:
-                return self._dist_low  # off-peak hours
+                return self._dist_low
 
     def _is_polish_holiday(self, date) -> bool:
         """Check if date is a Polish national holiday."""
@@ -634,15 +665,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         # Fixed holidays
         fixed_holidays = [
-            (1, 1),   # New Year's Day - Nowy Rok
-            (1, 6),   # Epiphany - Święto Trzech Króli
-            (5, 1),   # May Day - Święto Pracy
-            (5, 3),   # Constitution Day - Święto Konstytucji 3 Maja
-            (8, 15),  # Assumption Day - Wniebowzięcie NMP
-            (11, 1),  # All Saints Day - Wszystkich Świętych
-            (11, 11), # Independence Day - Święto Niepodległości
-            (12, 25), # Christmas Day - Boże Narodzenie
-            (12, 26), # Boxing Day - Drugi Dzień Świąt Bożego Narodzenia
+            (1, 1), (1, 6), (5, 1), (5, 3), (8, 15),
+            (11, 1), (11, 11), (12, 25), (12, 26),
         ]
 
         if (month, day) in fixed_holidays:
@@ -653,17 +677,16 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         # Moveable holidays relative to Easter
         moveable_holidays = [
-            easter_date,  # Easter Sunday - Wielkanoc
-            easter_date + timedelta(days=1),   # Easter Monday - Poniedziałek Wielkanocny
-            easter_date + timedelta(days=49),  # Whit Sunday - Zielone Świątki
-            easter_date + timedelta(days=60),  # Corpus Christi - Boże Ciało
+            easter_date,
+            easter_date + timedelta(days=1),
+            easter_date + timedelta(days=49),
+            easter_date + timedelta(days=60),
         ]
 
         return date in moveable_holidays
 
     def _calculate_easter(self, year: int):
         """Calculate Easter Sunday for given year using Gregorian algorithm."""
-        # Gregorian calendar Easter calculation
         a = year % 19
         b = year // 100
         c = year % 100
@@ -682,26 +705,20 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         return date(year, month, day)
 
     def _compute_total_price(self, base_pln_mwh: float, when, debug_info: bool = False) -> Dict[str, Any]:
-        """
-        Compute total price with PROSUMER NEGATIVE PRICE HANDLING.
-
-        PROSUMER LOGIC: If TGE price < 0, energy cost = 0, but still pay distribution & fees
-        Formula: total_gross = (max(0, cena_TGE) × (1 + VAT)) + exchange_fee + distribution_rate
-        """
+        """Compute total price with PROSUMER NEGATIVE PRICE HANDLING."""
         dist_rate = self._get_distribution_rate(when)
 
-        # Check if this is weekend/holiday for logging
         is_weekend = when.weekday() in (5, 6)
         is_polish_holiday = self._is_polish_holiday(when.date())
 
         # PROSUMER NEGATIVE PRICE HANDLING
         is_negative = base_pln_mwh < 0
-        effective_energy_price = max(0, base_pln_mwh)  # Negative becomes 0 for prosumers
+        effective_energy_price = max(0, base_pln_mwh)
 
         # VAT applied only to effective energy price (0 if negative)
         energy_with_vat = float(effective_energy_price) * (1.0 + float(self._vat_rate))
 
-        # Add fees and distribution (always applied, even for negative TGE prices)
+        # Add fees and distribution (always applied)
         total_gross = energy_with_vat + float(self._exchange_fee) + float(dist_rate)
 
         if debug_info or is_negative or is_polish_holiday:
@@ -725,16 +742,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     def _convert_units(self, value: float) -> float:
         """Convert price units."""
-        # Input value already in PLN/MWh gross
         if self._unit == UNIT_PLN_KWH:
-            return value / 1000  # MWh to kWh
+            return value / 1000
         elif self._unit == UNIT_EUR_MWH:
-            # EUR/PLN rate - simplified to 4.3
             return value / 4.3
         elif self._unit == UNIT_EUR_KWH:
             return value / 4.3 / 1000
 
-        return value  # PLN/MWh - default
+        return value
 
     def _calculate_value(self) -> Optional[float]:
         """Calculate sensor value based on type."""
@@ -743,10 +758,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
         if self._sensor_type == "current_price":
             return self._get_total_current_price(data, now)
-
         elif self._sensor_type == "next_hour_price":
             return self._get_total_next_hour_price(data, now)
-
         elif self._sensor_type == "daily_average":
             return self._get_total_daily_average(data, now)
 
@@ -758,7 +771,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if not today_data or not today_data.get("hourly_data"):
             return None
 
-        current_hour = now.hour + 1  # TGE uses 1-24
+        current_hour = now.hour + 1
 
         for item in today_data["hourly_data"]:
             if item["hour"] == current_hour:
@@ -769,9 +782,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     def _get_total_next_hour_price(self, data: Dict[str, Any], now: datetime) -> Optional[float]:
         """Get next hour price with all fees and VAT - NEGATIVE PRICE HANDLING."""
-        next_hour = now.hour + 2  # Next hour in TGE system
+        next_hour = now.hour + 2
 
-        # If next hour is tomorrow
         if next_hour > 24:
             tomorrow_data = data.get("tomorrow")
             if not tomorrow_data or not tomorrow_data.get("hourly_data"):
@@ -801,10 +813,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         if not today_data:
             return None
 
-        # Calculate average of gross prices for all hours (with negative price handling)
         total_prices = []
         for item in today_data.get('hourly_data', []):
-            # Construct datetime for specific hour
             hour_dt = now.replace(
                 hour=(item['hour']-1) % 24, 
                 minute=0, 
@@ -822,85 +832,53 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes - WITH EARLIER TOMORROW CHECK INFO."""
+        """Return extra state attributes - WITH SMART URL FINDING INFO."""
         if not REQUIRED_LIBRARIES_AVAILABLE:
             return {"error": "Required libraries not available"}
 
         if not self.coordinator.data:
             return {}
 
-        # Calculations for current hour
         now = datetime.now()
-        base_price = None
-        current_price_calc = None
         today_data = self.coordinator.data.get("today")
+        tomorrow_data = self.coordinator.data.get("tomorrow")
 
-        # Check today and tomorrow for holidays/weekends
+        # Check holidays/weekends
         today_is_weekend = now.weekday() in (5, 6)
         today_is_holiday = self._is_polish_holiday(now.date())
-
         tomorrow = now + timedelta(days=1)
         tomorrow_is_weekend = tomorrow.weekday() in (5, 6)
         tomorrow_is_holiday = self._is_polish_holiday(tomorrow.date())
 
+        # Current hour price calc
+        current_price_calc = None
         if today_data and today_data.get("hourly_data"):
             current_hour = now.hour + 1
             for item in today_data["hourly_data"]:
                 if item["hour"] == current_hour:
-                    base_price = item["price"]
                     current_price_calc = self._compute_total_price(item["price"], now, debug_info=True)
                     break
 
         data = self.coordinator.data
-        tomorrow_data = data.get("tomorrow")
         tomorrow_status = data.get("tomorrow_data_status", {})
-        startup_fetch = data.get("startup_fetch", False)
-        update_reason = data.get("update_reason", "unknown")
-
-        # Check for negative prices in today/tomorrow data
-        today_negative_info = {}
-        tomorrow_negative_info = {}
-
-        if today_data:
-            today_negative_info = {
-                "has_negative_prices": today_data.get("has_negative_prices", False),
-                "negative_hours": today_data.get("negative_hours", 0),
-                "total_hours": today_data.get("total_hours", 0),
-                "positive_average": today_data.get("positive_average", 0)
-            }
-
-        if tomorrow_data:
-            tomorrow_negative_info = {
-                "has_negative_prices": tomorrow_data.get("has_negative_prices", False),
-                "negative_hours": tomorrow_data.get("negative_hours", 0),
-                "total_hours": tomorrow_data.get("total_hours", 0),
-                "positive_average": tomorrow_data.get("positive_average", 0)
-            }
 
         attributes = {
             "last_update": data.get("last_update"),
-            "last_update_reason": update_reason,
+            "last_update_reason": data.get("update_reason", "unknown"),
             "unit_raw": UNIT_PLN_MWH,
             "unit_converted": self._unit,
-            "libraries_status": "available" if REQUIRED_LIBRARIES_AVAILABLE else "missing",
+            "smart_url_finding": "Tries 9 filename variations for inconsistent TGE naming (_2, ost, _final, etc.)",
             "pricing_formula": "max(0, TGE_price) × (1 + VAT) + exchange_fee + distribution_rate",
             "negative_price_handling": "Prosumer: negative TGE price → 0 energy cost, still pay distribution",
             "polish_holidays_support": "Weekends and Polish holidays use lowest distribution rate 24h",
             "hourly_updates": "Guaranteed updates at hour boundaries (XX:00) for current price",
-            "tomorrow_check_window": "12:00-16:00 DAILY (starts from 12:00 - extended by 1.5h earlier!)",
-            "startup_immediate_fetch": startup_fetch,
-            "tge_publishes_daily": "TGE publishes data EVERY DAY including weekends",
+            "tomorrow_check_window": "12:00-16:00 DAILY (starts from 12:00)",
             "data_status": {
                 "today_available": today_data is not None,
                 "tomorrow_available": tomorrow_data is not None,
                 "today_hours": len(today_data.get("hourly_data", [])) if today_data else 0,
                 "tomorrow_hours": len(tomorrow_data.get("hourly_data", [])) if tomorrow_data else 0,
-                "tomorrow_expected_time": tomorrow_status.get("expected_time", "12:00-16:00 DAILY - STARTS FROM 12:00!"),
-                "tomorrow_last_check": tomorrow_status.get("last_check"),
-                "tomorrow_force_fetched": tomorrow_status.get("force_fetched", False),
-                "tomorrow_day": tomorrow_status.get("tomorrow_day", "Unknown"),
-                "today_negative": today_negative_info,
-                "tomorrow_negative": tomorrow_negative_info,
+                "tomorrow_expected_time": tomorrow_status.get("expected_time", "12:00-16:00 DAILY - Smart URL finding!"),
                 "today_is_weekend": today_is_weekend,
                 "today_is_polish_holiday": today_is_holiday,
                 "tomorrow_is_weekend": tomorrow_is_weekend,
@@ -913,25 +891,19 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             }
         }
 
+        # Add today prices
         if today_data:
-            # Calculate gross prices for all hours today WITH NEGATIVE PRICE HANDLING & HOLIDAYS
             prices_today_gross = []
             for item in today_data.get("hourly_data", []):
-                # Construct datetime for hour
-                hour_dt = now.replace(
-                    hour=(item['hour']-1) % 24, 
-                    minute=0, 
-                    second=0, 
-                    microsecond=0
-                )
+                hour_dt = now.replace(hour=(item['hour']-1) % 24, minute=0, second=0, microsecond=0)
                 price_calc = self._compute_total_price(item['price'], hour_dt)
                 gross_price_converted = self._convert_units(price_calc["total_gross"])
 
                 prices_today_gross.append({
                     'time': item['time'],
                     'hour': item['hour'],
-                    'price_tge_original': item['price'],  # Original TGE (can be negative)
-                    'price_energy_effective': price_calc["effective_energy_price"],  # Energy price used (0 if negative)
+                    'price_tge_original': item['price'],
+                    'price_energy_effective': price_calc["effective_energy_price"],
                     'is_negative_hour': price_calc["is_negative_hour"],
                     'is_weekend': price_calc["is_weekend"],
                     'is_polish_holiday': price_calc["is_polish_holiday"],
@@ -944,41 +916,30 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     }
                 })
 
-            # Calculate gross statistics for today
             gross_prices = [p['price_gross'] for p in prices_today_gross]
 
             attributes.update({
                 "today_average": today_data.get("average_price"),
                 "today_min": today_data.get("min_price"),
                 "today_max": today_data.get("max_price"),
-                "today_hours": today_data.get("total_hours"),
-                "prices_today": today_data.get("hourly_data", []),  # Original TGE prices
-                "prices_today_gross": prices_today_gross,  # Prosumer gross prices with holidays handling
+                "prices_today_gross": prices_today_gross,
                 "today_average_gross": sum(gross_prices) / len(gross_prices) if gross_prices else None,
-                "today_min_gross": min(gross_prices) if gross_prices else None,
-                "today_max_gross": max(gross_prices) if gross_prices else None,
             })
 
+        # Add tomorrow prices
         if tomorrow_data:
-            # Calculate gross prices for all hours tomorrow WITH NEGATIVE PRICE HANDLING & HOLIDAYS
             prices_tomorrow_gross = []
             tomorrow_date = now + timedelta(days=1)
             for item in tomorrow_data.get("hourly_data", []):
-                # Construct datetime for tomorrow's hour
-                hour_dt = tomorrow_date.replace(
-                    hour=(item['hour']-1) % 24, 
-                    minute=0, 
-                    second=0, 
-                    microsecond=0
-                )
+                hour_dt = tomorrow_date.replace(hour=(item['hour']-1) % 24, minute=0, second=0, microsecond=0)
                 price_calc = self._compute_total_price(item['price'], hour_dt)
                 gross_price_converted = self._convert_units(price_calc["total_gross"])
 
                 prices_tomorrow_gross.append({
                     'time': item['time'],
                     'hour': item['hour'],
-                    'price_tge_original': item['price'],  # Original TGE (can be negative)
-                    'price_energy_effective': price_calc["effective_energy_price"],  # Energy price used (0 if negative)
+                    'price_tge_original': item['price'],
+                    'price_energy_effective': price_calc["effective_energy_price"],
                     'is_negative_hour': price_calc["is_negative_hour"],
                     'is_weekend': price_calc["is_weekend"],
                     'is_polish_holiday': price_calc["is_polish_holiday"],
@@ -991,19 +952,14 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
                     }
                 })
 
-            # Calculate gross statistics for tomorrow
             gross_prices_tomorrow = [p['price_gross'] for p in prices_tomorrow_gross]
 
             attributes.update({
                 "tomorrow_average": tomorrow_data.get("average_price"),
                 "tomorrow_min": tomorrow_data.get("min_price"),
                 "tomorrow_max": tomorrow_data.get("max_price"),
-                "tomorrow_hours": tomorrow_data.get("total_hours"),
-                "prices_tomorrow": tomorrow_data.get("hourly_data", []),  # Original TGE prices
-                "prices_tomorrow_gross": prices_tomorrow_gross,  # Prosumer gross prices with holidays handling
+                "prices_tomorrow_gross": prices_tomorrow_gross,
                 "tomorrow_average_gross": sum(gross_prices_tomorrow) / len(gross_prices_tomorrow) if gross_prices_tomorrow else None,
-                "tomorrow_min_gross": min(gross_prices_tomorrow) if gross_prices_tomorrow else None,
-                "tomorrow_max_gross": max(gross_prices_tomorrow) if gross_prices_tomorrow else None,
             })
 
         return attributes
