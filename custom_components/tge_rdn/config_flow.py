@@ -6,6 +6,7 @@ from homeassistant.core import callback
 from .const import *
 
 class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle config flow."""
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
@@ -38,7 +39,6 @@ class TGERDNOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-
         opts = self.config_entry.options
         return self.async_show_form(
             step_id="init",

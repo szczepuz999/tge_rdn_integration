@@ -15,5 +15,5 @@
     "openpyxl>=3.0.9",
     "beautifulsoup4>=4.11.0"
   ],
-  "version": "1.7.1"
+  "version": "1.7.3"
 }
