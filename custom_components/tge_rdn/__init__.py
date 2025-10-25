@@ -1,8 +1,8 @@
-"""TGE RDN Integration v1.7.3 - Complete attributes + TGE page parsing."""
+"""TGE RDN Integration v1.7.4 - DST Support."""
 from __future__ import annotations
 import logging
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform  
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 DOMAIN = "tge_rdn"
@@ -15,16 +15,15 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up from config entry."""
-    _LOGGER.info("🚀 TGE RDN Integration v1.7.3 starting...")
-    _LOGGER.info("✅ Complete attributes from v1.5.1")
-    _LOGGER.info("✅ TGE page parsing (not blocked directory)")
+    _LOGGER.info("🚀 TGE RDN Integration v1.7.4 starting...")
+    _LOGGER.info("✅ TGE page parsing + DST support")
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    _LOGGER.info("✅ TGE RDN v1.7.3 ready!")
+    _LOGGER.info("✅ TGE RDN v1.7.4 ready!")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -31,5 +31,5 @@ UPDATE_INTERVAL_NEXT_DAY = 600     # 10 min
 UPDATE_INTERVAL_FREQUENT = 900     # 15 min
 UPDATE_INTERVAL_NORMAL = 3600      # 1 hour
 
-# TGE DATA SOURCE - CHANGED TO PAGE URL (not directory which is blocked)
+# TGE DATA SOURCE
 TGE_PAGE_URL = "https://tge.pl/RDN_instrumenty_15"

@@ -8,8 +8,23 @@
           "exchange_fee": "Opłata giełdowa [PLN/MWh]",
           "vat_rate": "VAT (0.23 = 23%)",
           "dist_low": "Dystrybucja pozostałe [PLN/MWh]",
-          "dist_med": "Dystrybucja rano [PLN/MWh]",
-          "dist_high": "Dystrybucja wieczór [PLN/MWh]"
+          "dist_med": "Dystrybucja szczyt rano [PLN/MWh]",
+          "dist_high": "Dystrybucja szczyt wieczór [PLN/MWh]"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje TGE RDN",
+        "data": {
+          "unit": "Jednostka ceny",
+          "exchange_fee": "Opłata giełdowa",
+          "vat_rate": "VAT",
+          "dist_low": "Dystrybucja pozostałe",
+          "dist_med": "Dystrybucja szczyt rano",
+          "dist_high": "Dystrybucja szczyt wieczór"
         }
       }
     }

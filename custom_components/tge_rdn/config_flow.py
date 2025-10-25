@@ -13,12 +13,18 @@ class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             await self.async_set_unique_id("tge_rdn_integration")
             self._abort_if_unique_id_configured()
-            return self.async_create_entry(title="TGE RDN Energy Prices", data={}, options=user_input)
+            return self.async_create_entry(
+                title="TGE RDN Energy Prices", 
+                data={}, 
+                options=user_input
+            )
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
-                vol.Required(CONF_UNIT, default=DEFAULT_UNIT): vol.In([UNIT_PLN_KWH, UNIT_PLN_MWH, UNIT_EUR_KWH, UNIT_EUR_MWH]),
+                vol.Required(CONF_UNIT, default=DEFAULT_UNIT): vol.In(
+                    [UNIT_PLN_KWH, UNIT_PLN_MWH, UNIT_EUR_KWH, UNIT_EUR_MWH]
+                ),
                 vol.Required(CONF_EXCHANGE_FEE, default=DEFAULT_EXCHANGE_FEE): vol.Coerce(float),
                 vol.Required(CONF_VAT_RATE, default=DEFAULT_VAT_RATE): vol.Coerce(float),
                 vol.Required(CONF_DIST_LOW, default=DEFAULT_DIST_LOW): vol.Coerce(float),
@@ -43,7 +49,9 @@ class TGERDNOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(CONF_UNIT, default=opts.get(CONF_UNIT, DEFAULT_UNIT)): vol.In([UNIT_PLN_KWH, UNIT_PLN_MWH, UNIT_EUR_KWH, UNIT_EUR_MWH]),
+                vol.Required(CONF_UNIT, default=opts.get(CONF_UNIT, DEFAULT_UNIT)): vol.In(
+                    [UNIT_PLN_KWH, UNIT_PLN_MWH, UNIT_EUR_KWH, UNIT_EUR_MWH]
+                ),
                 vol.Required(CONF_EXCHANGE_FEE, default=opts.get(CONF_EXCHANGE_FEE, DEFAULT_EXCHANGE_FEE)): vol.Coerce(float),
                 vol.Required(CONF_VAT_RATE, default=opts.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)): vol.Coerce(float),
                 vol.Required(CONF_DIST_LOW, default=opts.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)): vol.Coerce(float),

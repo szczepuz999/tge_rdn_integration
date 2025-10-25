@@ -9,11 +9,12 @@
   "documentation": "https://github.com/szczepuz999/tge_rdn_integration",
   "integration_type": "service",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/szczepuz999/tge_rdn_integration/issues",
   "requirements": [
     "pandas>=1.5.0",
     "requests>=2.28.0",
     "openpyxl>=3.0.9",
     "beautifulsoup4>=4.11.0"
   ],
-  "version": "1.7.3"
+  "version": "1.7.4"
 }
