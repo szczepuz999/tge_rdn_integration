@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform v1.8.0 - Web Table Parsing."""
+"""TGE RDN sensor platform v1.8.1 - Web Table Parsing with Date Fix."""
 import logging
 import asyncio
 import re
@@ -71,9 +71,10 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing libraries: {IMPORT_ERROR}")
         raise Exception(f"Missing libraries: {IMPORT_ERROR}")
 
-    _LOGGER.info("🚀 TGE RDN v1.8.0 - Starting integration...")
+    _LOGGER.info("🚀 TGE RDN v1.8.2 - Starting integration...")
     _LOGGER.info("📄 Source: https://tge.pl/energia-elektryczna-rdn")
     _LOGGER.info("✅ Web Table Parsing + DST Support Enabled")
+    _LOGGER.info("💰 Price Source: Fixing I (primary)")
 
     coordinator = TGERDNDataUpdateCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
@@ -90,7 +91,7 @@ async def async_setup_entry(
     if coordinator.data:
         today_ok = coordinator.data.get("today") is not None
         tomorrow_ok = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN v1.8.0 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
+        _LOGGER.info(f"✅ TGE RDN v1.8.2 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
 
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
@@ -138,9 +139,14 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         """Parse TGE HTML table to extract price data for specific date."""
         try:
             date_str = target_date.strftime("%Y-%m-%d")
-            _LOGGER.debug(f"🔍 Fetching table data for: {date_str}")
+            # IMPORTANT: The TGE website shows prices for the NEXT day after dateShow parameter
+            # To get prices for date X, we need to request dateShow=X-1 (previous day)
+            previous_day = target_date - timedelta(days=1)
+            date_param = previous_day.strftime("%d-%m-%Y")
+            url_with_date = f"{TGE_PAGE_URL}?dateShow={date_param}"
+            _LOGGER.debug(f"🔍 Fetching table data for: {date_str} from {url_with_date}")
 
-            response = requests.get(TGE_PAGE_URL, timeout=30, headers={
+            response = requests.get(url_with_date, timeout=30, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             })
             if response.status_code != 200:
@@ -191,8 +197,18 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                 # Parse price - try multiple columns
                 price = None
                 
-                # Try Fixing II price (column ~7)
-                if len(cells) > 7:
+                # Try Fixing I price (column 2) - PRIMARY SOURCE
+                if len(cells) > 2:
+                    price_text = cells[2].get_text(strip=True)
+                    if price_text and price_text != '-':
+                        price_text = price_text.replace(',', '.').replace(' ', '')
+                        try:
+                            price = float(price_text)
+                        except ValueError:
+                            pass
+                
+                # If no Fixing I, try Fixing II price (column 7)
+                if price is None and len(cells) > 7:
                     price_text = cells[7].get_text(strip=True)
                     if price_text and price_text != '-':
                         price_text = price_text.replace(',', '.').replace(' ', '')
@@ -201,19 +217,9 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
                         except ValueError:
                             pass
                 
-                # If no Fixing II, try weighted average from all trading (column ~13)
+                # If still no price, try weighted average from all trading (column 13)
                 if price is None and len(cells) > 13:
                     price_text = cells[13].get_text(strip=True)
-                    if price_text and price_text != '-':
-                        price_text = price_text.replace(',', '.').replace(' ', '')
-                        try:
-                            price = float(price_text)
-                        except ValueError:
-                            pass
-                
-                # If still no price, try continuous trading (column ~4)
-                if price is None and len(cells) > 4:
-                    price_text = cells[4].get_text(strip=True)
                     if price_text and price_text != '-':
                         price_text = price_text.replace(',', '.').replace(' ', '')
                         try:
@@ -448,6 +454,17 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         moveable = [easter, easter+timedelta(1), easter+timedelta(49), easter+timedelta(60)]
         return d in moveable
 
+    def _is_working_day(self) -> bool:
+        """Check if today is a normal working day (not weekend or holiday)."""
+        today = datetime.now().date()
+        # Check if weekend (Saturday=5, Sunday=6)
+        if today.weekday() in (5, 6):
+            return False
+        # Check if holiday
+        if self._is_holiday(today):
+            return False
+        return True
+
     def _easter(self, y: int) -> date:
         """Calculate Easter."""
         a=y%19; b=y//100; c=y%100; d=b//4; e=b%4
@@ -534,11 +551,13 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
 
         attrs = {
-            "version": "1.8.0",
+            "version": "1.8.2",
             "source": TGE_PAGE_URL,
             "dst_support": True,
+            "price_source": "Fixing I",
             "last_update": data.get("last_update"),
             "unit": self._unit,
+            "is_working_day": self._is_working_day(),
         }
 
         if data.get("today"):

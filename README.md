@@ -1,4 +1,4 @@
-# TGE RDN Energy Prices Integration v1.8.0
+# TGE RDN Energy Prices Integration v1.8.1
 
 [![HACS][hacs-badge]][hacs-url]
 [![GitHub Release][release-badge]][release-url]
@@ -93,6 +93,12 @@ On days when clocks change (26 October, 31 March):
 The integration automatically handles both cases.
 
 ## Changelog
+
+### v1.8.1 (2025-11-21)
+- **FIXED**: Corrected URL date parameter logic for today/tomorrow data
+- **NEW**: Added `is_working_day` attribute to detect working days vs weekends/holidays
+- **IMPROVED**: Now correctly fetches today's prices (not just tomorrow's)
+- Date parameter uses reversed logic: request dateShow=X+1 to get data for day X
 
 ### v1.8.0 (2025-11-21)
 - **BREAKING**: Changed data source from Excel files to web table
