@@ -1,4 +1,4 @@
-# TGE RDN Energy Prices Integration v1.8.1
+# TGE RDN Energy Prices Integration v1.8.2
 
 [![HACS][hacs-badge]][hacs-url]
 [![GitHub Release][release-badge]][release-url]
@@ -9,9 +9,11 @@ Home Assistant integration for TGE RDN (Polish energy exchange) electricity pric
 ## Features
 
 - ✅ **Web Table Parsing** - Directly parses price table from https://tge.pl/energia-elektryczna-rdn
+- ✅ **Fixing I Prices** - Uses primary auction clearing prices (most accurate)
 - ✅ **No Excel Downloads** - Fast, efficient HTML table parsing with BeautifulSoup
 - ✅ **Complete Attributes** - ALL prices with full breakdown
 - ✅ **Polish Holidays Support** - Automatic detection of weekends and holidays
+- ✅ **Working Day Detection** - `is_working_day` attribute for automations
 - ✅ **DST Change Support** - Handles day with 25 hours (autumn) and 23 hours (spring)
 - ✅ **Negative Prices** - Prosumer logic: negative energy = 0 PLN, distribution still applies
 - ✅ **Hourly Updates** - Guaranteed updates at full hours
@@ -59,23 +61,27 @@ sudo systemctl restart home-assistant
 Each sensor includes comprehensive attributes:
 
 ```yaml
+version: "1.8.2"
+source: "https://tge.pl/energia-elektryczna-rdn"
+price_source: "Fixing I"
+is_working_day: true
+dst_support: true
+unit: "PLN/kWh"
+
 today:
-  date: "2025-10-25"
-  average_price: 350.50
-  min_price: 250.00
-  max_price: 450.00
+  date: "2025-11-21"
+  average_price: 628.67
+  min_price: 420.90
+  max_price: 1069.67
   total_hours: 24
   negative_hours: 0
 
 prices_today_gross:
-  - time: "2025-10-25T00:00:00"
+  - time: "2025-11-21T00:00:00"
     hour: 1
-    price: 320.50
-    price_gross: 0.450  # In configured unit
-    components:
-      energy_with_vat: 396.22
-      exchange_fee: 2.0
-      distribution: 80.0
+    price_tge: 427.10  # Fixing I price
+    price_gross_pln_mwh: 607.53
+    price_gross: 0.6075  # In configured unit (PLN/kWh)
 
 # + Similar for tomorrow
 tomorrow: {...}
@@ -94,11 +100,18 @@ The integration automatically handles both cases.
 
 ## Changelog
 
+### v1.8.2 (2025-11-21)
+- **FIXED**: Now using Fixing I prices (column 2) instead of Fixing II (column 7)
+- **NEW**: Added `price_source: "Fixing I"` attribute
+- **IMPROVED**: More accurate prices - Fixing I represents the main auction clearing price
+- Fixing I is the primary reference price used in Polish energy markets
+- Fallback to Fixing II if Fixing I unavailable
+
 ### v1.8.1 (2025-11-21)
 - **FIXED**: Corrected URL date parameter logic for today/tomorrow data
 - **NEW**: Added `is_working_day` attribute to detect working days vs weekends/holidays
 - **IMPROVED**: Now correctly fetches today's prices (not just tomorrow's)
-- Date parameter uses reversed logic: request dateShow=X+1 to get data for day X
+- Date parameter uses reversed logic: request dateShow=(X-1) to get data for day X
 
 ### v1.8.0 (2025-11-21)
 - **BREAKING**: Changed data source from Excel files to web table
