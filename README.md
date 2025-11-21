@@ -1,4 +1,4 @@
-# TGE RDN Energy Prices Integration v1.7.4
+# TGE RDN Energy Prices Integration v1.8.0
 
 [![HACS][hacs-badge]][hacs-url]
 [![GitHub Release][release-badge]][release-url]
@@ -8,7 +8,8 @@ Home Assistant integration for TGE RDN (Polish energy exchange) electricity pric
 
 ## Features
 
-- ✅ **TGE Page Parsing** - Parses https://tge.pl/RDN_instrumenty_15 (not blocked directory)
+- ✅ **Web Table Parsing** - Directly parses price table from https://tge.pl/energia-elektryczna-rdn
+- ✅ **No Excel Downloads** - Fast, efficient HTML table parsing with BeautifulSoup
 - ✅ **Complete Attributes** - ALL prices with full breakdown
 - ✅ **Polish Holidays Support** - Automatic detection of weekends and holidays
 - ✅ **DST Change Support** - Handles day with 25 hours (autumn) and 23 hours (spring)
@@ -93,6 +94,14 @@ The integration automatically handles both cases.
 
 ## Changelog
 
+### v1.8.0 (2025-11-21)
+- **BREAKING**: Changed data source from Excel files to web table
+- **NEW**: Direct HTML table parsing from https://tge.pl/energia-elektryczna-rdn
+- **REMOVED**: pandas and openpyxl dependencies (lighter, faster)
+- **IMPROVED**: More reliable data fetching
+- Maintains all existing functionality (DST support, holidays, etc.)
+- All sensors and attributes work exactly as before
+
 ### v1.7.4 (2025-10-25)
 - **NEW**: DST change support (H02a handling)
 - Handles days with 25 hours (autumn) and 23 hours (spring)
@@ -103,10 +112,6 @@ The integration automatically handles both cases.
 - TGE page parsing (not blocked directory)
 - Polish holidays + weekends support
 - prices_today_gross and prices_tomorrow_gross
-
-### v1.7.0
-- TGE page parsing implementation
-- Handles filename variations (_2, ost, _final)
 
 ### v1.5.1
 - Earlier tomorrow check from 12:00
@@ -121,9 +126,7 @@ The integration automatically handles both cases.
 
 - Home Assistant >= 2023.1
 - Python packages:
-  - pandas >= 1.5.0
   - requests >= 2.28.0
-  - openpyxl >= 3.0.9
   - beautifulsoup4 >= 4.11.0
 
 ## Usage Examples

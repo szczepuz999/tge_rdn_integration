@@ -32,4 +32,4 @@ UPDATE_INTERVAL_FREQUENT = 900     # 15 min
 UPDATE_INTERVAL_NORMAL = 3600      # 1 hour
 
 # TGE DATA SOURCE
-TGE_PAGE_URL = "https://tge.pl/RDN_instrumenty_15"
+TGE_PAGE_URL = "https://tge.pl/energia-elektryczna-rdn"

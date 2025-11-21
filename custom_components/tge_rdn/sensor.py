@@ -1,15 +1,12 @@
-"""TGE RDN sensor platform v1.7.4 - DST Support."""
+"""TGE RDN sensor platform v1.8.0 - Web Table Parsing."""
 import logging
 import asyncio
-import io
 import re
 from datetime import datetime, timedelta, time, date
 from typing import Dict, List, Optional, Any
 
 try:
-    import pandas as pd
     import requests
-    import openpyxl
     from bs4 import BeautifulSoup
     REQUIRED_LIBRARIES_AVAILABLE = True
 except ImportError as err:
@@ -74,9 +71,9 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing libraries: {IMPORT_ERROR}")
         raise Exception(f"Missing libraries: {IMPORT_ERROR}")
 
-    _LOGGER.info("🚀 TGE RDN v1.7.4 - Starting integration...")
-    _LOGGER.info("📄 Source: https://tge.pl/RDN_instrumenty_15")
-    _LOGGER.info("✅ DST Change Support Enabled")
+    _LOGGER.info("🚀 TGE RDN v1.8.0 - Starting integration...")
+    _LOGGER.info("📄 Source: https://tge.pl/energia-elektryczna-rdn")
+    _LOGGER.info("✅ Web Table Parsing + DST Support Enabled")
 
     coordinator = TGERDNDataUpdateCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
@@ -93,7 +90,7 @@ async def async_setup_entry(
     if coordinator.data:
         today_ok = coordinator.data.get("today") is not None
         tomorrow_ok = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN v1.7.4 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
+        _LOGGER.info(f"✅ TGE RDN v1.8.0 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
 
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
@@ -137,47 +134,139 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             return 1800
 
-    def _find_excel_url_for_date(self, target_date: datetime) -> Optional[str]:
-        """Parse TGE page to find Excel file - handles ALL variations."""
+    def _parse_html_table_for_date(self, target_date: datetime) -> Optional[Dict[str, Any]]:
+        """Parse TGE HTML table to extract price data for specific date."""
         try:
-            date_str = target_date.strftime("%Y_%m_%d")
-            _LOGGER.debug(f"🔍 Parsing TGE page for: {date_str}")
+            date_str = target_date.strftime("%Y-%m-%d")
+            _LOGGER.debug(f"🔍 Fetching table data for: {date_str}")
 
-            response = requests.get(TGE_PAGE_URL, timeout=30)
+            response = requests.get(TGE_PAGE_URL, timeout=30, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
             if response.status_code != 200:
                 _LOGGER.warning(f"Failed to access TGE page: HTTP {response.status_code}")
                 return None
 
             soup = BeautifulSoup(response.text, 'html.parser')
-            all_links = soup.find_all('a', href=True)
-            _LOGGER.debug(f"📝 Found {len(all_links)} links")
-
-            found_urls = []
-            for link in all_links:
-                href = link['href']
-                if not href.endswith('.xlsx'):
-                    continue
-                if date_str not in href:
-                    continue
-                if 'Raport_RDN_dzie_dostawy_delivery_day' not in href:
-                    continue
-
-                url = href if href.startswith('http') else f"https://tge.pl{href}"
-                found_urls.append(url)
-
-            if found_urls:
-                _LOGGER.info(f"✅ Found {len(found_urls)} file(s):")
-                for url in found_urls:
-                    _LOGGER.info(f"   📄 {url.split('/')[-1]}")
-
-                selected = found_urls[0]
-                _LOGGER.info(f"👉 Selected: {selected}")
-                return selected
-            else:
-                _LOGGER.debug(f"No file for {target_date.date()}")
+            
+            # Find the main table
+            table = soup.find('table', {'id': 'rdn'})
+            if not table:
+                table = soup.find('table', class_='table-rdb')
+            
+            if not table:
+                _LOGGER.warning("Could not find price table")
                 return None
+            
+            # Parse rows
+            rows = table.find_all('tr')
+            hourly_data = []
+            negative_hours = 0
+            
+            for row in rows[2:]:  # Skip header rows
+                cells = row.find_all('td')
+                if len(cells) < 3:
+                    continue
+                
+                # First cell contains date and hour: "2025-11-22_H01"
+                date_hour_text = cells[0].get_text(strip=True)
+                
+                # Skip quarter-hour entries
+                if '_Q' in date_hour_text:
+                    continue
+                
+                # Parse date and hour: format 2025-11-22_H01 or 2025-11-22_H02a
+                match = re.match(r'(\d{4}-\d{2}-\d{2})_H(\d{2})([a-z]?)', date_hour_text)
+                if not match:
+                    continue
+                
+                row_date_str = match.group(1)
+                hour_num = int(match.group(2))
+                dst_marker = match.group(3)
+                
+                # Only process rows for target date
+                if row_date_str != date_str:
+                    continue
+                
+                # Parse price - try multiple columns
+                price = None
+                
+                # Try Fixing II price (column ~7)
+                if len(cells) > 7:
+                    price_text = cells[7].get_text(strip=True)
+                    if price_text and price_text != '-':
+                        price_text = price_text.replace(',', '.').replace(' ', '')
+                        try:
+                            price = float(price_text)
+                        except ValueError:
+                            pass
+                
+                # If no Fixing II, try weighted average from all trading (column ~13)
+                if price is None and len(cells) > 13:
+                    price_text = cells[13].get_text(strip=True)
+                    if price_text and price_text != '-':
+                        price_text = price_text.replace(',', '.').replace(' ', '')
+                        try:
+                            price = float(price_text)
+                        except ValueError:
+                            pass
+                
+                # If still no price, try continuous trading (column ~4)
+                if price is None and len(cells) > 4:
+                    price_text = cells[4].get_text(strip=True)
+                    if price_text and price_text != '-':
+                        price_text = price_text.replace(',', '.').replace(' ', '')
+                        try:
+                            price = float(price_text)
+                        except ValueError:
+                            pass
+                
+                if price is None:
+                    continue
+                
+                if price < 0:
+                    negative_hours += 1
+                
+                hour_datetime = target_date.replace(
+                    hour=hour_num - 1,  # H01 = 00:00-01:00
+                    minute=0,
+                    second=0,
+                    microsecond=0
+                )
+                
+                hourly_data.append({
+                    'time': hour_datetime.isoformat(),
+                    'hour': hour_num,
+                    'price': price,
+                    'is_negative': price < 0,
+                    'dst_marker': dst_marker
+                })
+            
+            if not hourly_data:
+                _LOGGER.debug(f"No data for {date_str}")
+                return None
+            
+            # Sort by hour
+            hourly_data.sort(key=lambda x: x['hour'])
+            
+            # Calculate statistics
+            prices = [item['price'] for item in hourly_data]
+            
+            result = {
+                "date": target_date.date().isoformat(),
+                "hourly_data": hourly_data,
+                "average_price": sum(prices) / len(prices) if prices else 0,
+                "min_price": min(prices) if prices else 0,
+                "max_price": max(prices) if prices else 0,
+                "total_hours": len(hourly_data),
+                "negative_hours": negative_hours,
+            }
+            
+            _LOGGER.debug(f"✅ Found {len(hourly_data)} hours for {date_str}")
+            return result
+            
         except Exception as e:
-            _LOGGER.error(f"Error parsing TGE page: {e}")
+            _LOGGER.error(f"Error parsing table for {target_date.date()}: {e}")
             return None
 
     async def async_config_entry_first_refresh(self) -> None:
@@ -256,32 +345,21 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
     async def _fetch_day_data(
         self, date: datetime, day_type: str
     ) -> Optional[Dict[str, Any]]:
-        """Fetch data for specific date."""
+        """Fetch data for specific date from HTML table."""
         try:
-            url = await self.hass.async_add_executor_job(
-                self._find_excel_url_for_date, date
-            )
-
-            if not url:
-                _LOGGER.debug(f"No file for {day_type} ({date.date()})")
-                return None
-
-            _LOGGER.debug(f"📥 Downloading {day_type}...")
-            content = await self.hass.async_add_executor_job(
-                self._download_file, url
-            )
-
-            if not content:
-                return None
-
+            _LOGGER.debug(f"📥 Fetching {day_type} from HTML table...")
+            
             result = await self.hass.async_add_executor_job(
-                self._parse_excel_data, content, date
+                self._parse_html_table_for_date, date
             )
 
-            if result:
-                hours = len(result.get('hourly_data', []))
-                avg = result.get('average_price', 0)
-                _LOGGER.info(f"✅ {day_type.title()} ({date.date()}): {hours}h, avg {avg:.2f}")
+            if not result:
+                _LOGGER.debug(f"No data for {day_type} ({date.date()})")
+                return None
+
+            hours = len(result.get('hourly_data', []))
+            avg = result.get('average_price', 0)
+            _LOGGER.info(f"✅ {day_type.title()} ({date.date()}): {hours}h, avg {avg:.2f}")
 
             return result
         except DataNotAvailableError:
@@ -290,96 +368,7 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching {day_type}: {err}")
             return None
 
-    def _download_file(self, url: str) -> Optional[bytes]:
-        """Download file from URL."""
-        try:
-            response = requests.get(url, timeout=30)
-            if response.status_code == 200 and len(response.content) > 100:
-                return response.content
-            else:
-                _LOGGER.warning(f"Download failed: HTTP {response.status_code}")
-                return None
-        except Exception as e:
-            _LOGGER.error(f"Download error: {e}")
-            return None
 
-    def _parse_excel_data(self, file_content: bytes, date: datetime) -> Dict[str, Any]:
-        """Parse Excel file - HANDLES DST CHANGES."""
-        try:
-            # Validate file
-            if len(file_content) < 100 or not file_content.startswith(b'PK'):
-                raise DataNotAvailableError("Invalid Excel file")
-
-            # Read Excel
-            excel_file = io.BytesIO(file_content)
-            df = pd.read_excel(
-                excel_file,
-                sheet_name="WYNIKI",
-                header=None,
-                engine="openpyxl"
-            )
-
-            # Parse hourly data
-            hourly_data = []
-            negative_hours = 0
-
-            for index, row in df.iterrows():
-                time_value = row[8] if len(row) > 8 else None
-                price_value = row[10] if len(row) > 10 else None
-
-                if pd.notna(time_value) and isinstance(time_value, str):
-                    # Match format: 26-10-25_H02 or 26-10-25_H02a (DST!)
-                    if re.match(r'\d{2}-\d{2}-\d{2}_H\d{2}[a-z]?', str(time_value)):
-                        if pd.notna(price_value) and isinstance(price_value, (int, float)):
-                            # Extract hour, handle DST change (e.g., 'H02a')
-                            hour_str = time_value.split('_H')[1]
-                            # Remove any letters (like 'a' in 'H02a')
-                            hour_str_clean = ''.join(c for c in hour_str if c.isdigit())
-                            hour = int(hour_str_clean)
-
-                            price = float(price_value)
-
-                            if price < 0:
-                                negative_hours += 1
-
-                            hour_datetime = date.replace(
-                                hour=hour - 1,
-                                minute=0,
-                                second=0,
-                                microsecond=0
-                            )
-
-                            hourly_data.append({
-                                'time': hour_datetime.isoformat(),
-                                'hour': hour,
-                                'price': price,
-                                'is_negative': price < 0
-                            })
-
-            # Sort by hour
-            hourly_data.sort(key=lambda x: x['hour'])
-
-            if not hourly_data:
-                raise DataNotAvailableError("No valid price data")
-
-            # Calculate statistics
-            prices = [item['price'] for item in hourly_data]
-
-            return {
-                "date": date.date().isoformat(),
-                "hourly_data": hourly_data,
-                "average_price": sum(prices) / len(prices) if prices else 0,
-                "min_price": min(prices) if prices else 0,
-                "max_price": max(prices) if prices else 0,
-                "total_hours": len(hourly_data),
-                "negative_hours": negative_hours,
-            }
-
-        except DataNotAvailableError:
-            raise
-        except Exception as err:
-            _LOGGER.error(f"Error parsing Excel for {date.date()}: {err}")
-            raise
 
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
@@ -545,7 +534,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
 
         attrs = {
-            "version": "1.7.4",
+            "version": "1.8.0",
             "source": TGE_PAGE_URL,
             "dst_support": True,
             "last_update": data.get("last_update"),
