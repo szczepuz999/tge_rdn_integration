@@ -9,7 +9,12 @@
           "vat_rate": "VAT (0.23 = 23%)",
           "dist_low": "Dystrybucja pozostałe [PLN/MWh]",
           "dist_med": "Dystrybucja szczyt rano [PLN/MWh]",
-          "dist_high": "Dystrybucja szczyt wieczór [PLN/MWh]"
+          "dist_high": "Dystrybucja szczyt wieczór [PLN/MWh]",
+          "fixed_transmission_fee": "Stała opłata przesyłowa [PLN/mc]",
+          "transitional_fee": "Opłata przejściowa [PLN/mc]",
+          "subscription_fee": "Opłata abonamentowa [PLN/mc]",
+          "capacity_fee": "Opłata mocowa [PLN/mc]",
+          "trade_fee": "Opłata handlowa [PLN/mc]"
         }
       }
     }
@@ -24,8 +29,41 @@
           "vat_rate": "VAT",
           "dist_low": "Dystrybucja pozostałe",
           "dist_med": "Dystrybucja szczyt rano",
-          "dist_high": "Dystrybucja szczyt wieczór"
+          "dist_high": "Dystrybucja szczyt wieczór",
+          "fixed_transmission_fee": "Stała opłata przesyłowa",
+          "transitional_fee": "Opłata przejściowa",
+          "subscription_fee": "Opłata abonamentowa",
+          "capacity_fee": "Opłata mocowa",
+          "trade_fee": "Opłata handlowa"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_price": {
+        "name": "Aktualna cena"
+      },
+      "next_hour_price": {
+        "name": "Cena w następnej godzinie"
+      },
+      "daily_average": {
+        "name": "Średnia dzienna"
+      },
+      "fixed_transmission_fee": {
+        "name": "Stała opłata przesyłowa"
+      },
+      "transitional_fee": {
+        "name": "Opłata przejściowa"
+      },
+      "subscription_fee": {
+        "name": "Opłata abonamentowa"
+      },
+      "capacity_fee": {
+        "name": "Opłata mocowa"
+      },
+      "trade_fee": {
+        "name": "Opłata handlowa"
       }
     }
   }

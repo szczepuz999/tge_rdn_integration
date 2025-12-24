@@ -30,6 +30,11 @@ class TGERDNConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_DIST_LOW, default=DEFAULT_DIST_LOW): vol.Coerce(float),
                 vol.Required(CONF_DIST_MED, default=DEFAULT_DIST_MED): vol.Coerce(float),
                 vol.Required(CONF_DIST_HIGH, default=DEFAULT_DIST_HIGH): vol.Coerce(float),
+                vol.Required(CONF_FIXED_TRANSMISSION_FEE, default=DEFAULT_FIXED_TRANSMISSION_FEE): vol.Coerce(float),
+                vol.Required(CONF_TRANSITIONAL_FEE, default=DEFAULT_TRANSITIONAL_FEE): vol.Coerce(float),
+                vol.Required(CONF_SUBSCRIPTION_FEE, default=DEFAULT_SUBSCRIPTION_FEE): vol.Coerce(float),
+                vol.Required(CONF_CAPACITY_FEE, default=DEFAULT_CAPACITY_FEE): vol.Coerce(float),
+                vol.Required(CONF_TRADE_FEE, default=DEFAULT_TRADE_FEE): vol.Coerce(float),
             })
         )
 
@@ -57,5 +62,10 @@ class TGERDNOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(CONF_DIST_LOW, default=opts.get(CONF_DIST_LOW, DEFAULT_DIST_LOW)): vol.Coerce(float),
                 vol.Required(CONF_DIST_MED, default=opts.get(CONF_DIST_MED, DEFAULT_DIST_MED)): vol.Coerce(float),
                 vol.Required(CONF_DIST_HIGH, default=opts.get(CONF_DIST_HIGH, DEFAULT_DIST_HIGH)): vol.Coerce(float),
+                vol.Required(CONF_FIXED_TRANSMISSION_FEE, default=opts.get(CONF_FIXED_TRANSMISSION_FEE, DEFAULT_FIXED_TRANSMISSION_FEE)): vol.Coerce(float),
+                vol.Required(CONF_TRANSITIONAL_FEE, default=opts.get(CONF_TRANSITIONAL_FEE, DEFAULT_TRANSITIONAL_FEE)): vol.Coerce(float),
+                vol.Required(CONF_SUBSCRIPTION_FEE, default=opts.get(CONF_SUBSCRIPTION_FEE, DEFAULT_SUBSCRIPTION_FEE)): vol.Coerce(float),
+                vol.Required(CONF_CAPACITY_FEE, default=opts.get(CONF_CAPACITY_FEE, DEFAULT_CAPACITY_FEE)): vol.Coerce(float),
+                vol.Required(CONF_TRADE_FEE, default=opts.get(CONF_TRADE_FEE, DEFAULT_TRADE_FEE)): vol.Coerce(float),
             })
         )

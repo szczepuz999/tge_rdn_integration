@@ -9,7 +9,12 @@
           "vat_rate": "VAT rate (0.23 = 23%)",
           "dist_low": "Distribution off-peak [PLN/MWh]",
           "dist_med": "Distribution morning [PLN/MWh]",
-          "dist_high": "Distribution evening [PLN/MWh]"
+          "dist_high": "Distribution evening [PLN/MWh]",
+          "fixed_transmission_fee": "Fixed transmission fee [PLN/month]",
+          "transitional_fee": "Transitional fee [PLN/month]",
+          "subscription_fee": "Subscription fee [PLN/month]",
+          "capacity_fee": "Capacity fee [PLN/month]",
+          "trade_fee": "Trade fee [PLN/month]"
         }
       }
     }
@@ -24,8 +29,41 @@
           "vat_rate": "VAT rate",
           "dist_low": "Distribution off-peak",
           "dist_med": "Distribution morning",
-          "dist_high": "Distribution evening"
+          "dist_high": "Distribution evening",
+          "fixed_transmission_fee": "Fixed transmission fee",
+          "transitional_fee": "Transitional fee",
+          "subscription_fee": "Subscription fee",
+          "capacity_fee": "Capacity fee",
+          "trade_fee": "Trade fee"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_price": {
+        "name": "Current Price"
+      },
+      "next_hour_price": {
+        "name": "Next Hour Price"
+      },
+      "daily_average": {
+        "name": "Daily Average"
+      },
+      "fixed_transmission_fee": {
+        "name": "Fixed Transmission Fee"
+      },
+      "transitional_fee": {
+        "name": "Transitional Fee"
+      },
+      "subscription_fee": {
+        "name": "Subscription Fee"
+      },
+      "capacity_fee": {
+        "name": "Capacity Fee"
+      },
+      "trade_fee": {
+        "name": "Trade Fee"
       }
     }
   }

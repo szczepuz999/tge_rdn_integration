@@ -47,6 +47,16 @@ from .const import (
     DEFAULT_DIST_MED,
     CONF_DIST_HIGH,
     DEFAULT_DIST_HIGH,
+    CONF_FIXED_TRANSMISSION_FEE,
+    DEFAULT_FIXED_TRANSMISSION_FEE,
+    CONF_TRANSITIONAL_FEE,
+    DEFAULT_TRANSITIONAL_FEE,
+    CONF_SUBSCRIPTION_FEE,
+    DEFAULT_SUBSCRIPTION_FEE,
+    CONF_CAPACITY_FEE,
+    DEFAULT_CAPACITY_FEE,
+    CONF_TRADE_FEE,
+    DEFAULT_TRADE_FEE,
     UPDATE_INTERVAL_CURRENT,
     UPDATE_INTERVAL_NEXT_DAY,
     UPDATE_INTERVAL_FREQUENT,
@@ -71,7 +81,7 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing libraries: {IMPORT_ERROR}")
         raise Exception(f"Missing libraries: {IMPORT_ERROR}")
 
-    _LOGGER.info("🚀 TGE RDN v1.8.2 - Starting integration...")
+    _LOGGER.info("🚀 TGE RDN v1.8.4 - Starting integration...")
     _LOGGER.info("📄 Source: https://tge.pl/energia-elektryczna-rdn")
     _LOGGER.info("✅ Web Table Parsing + DST Support Enabled")
     _LOGGER.info("💰 Price Source: Fixing I (primary)")
@@ -85,13 +95,25 @@ async def async_setup_entry(
         TGERDNSensor(coordinator, entry, "daily_average"),
     ]
 
+    # Fixed monthly fees
+    fees = [
+        ("fixed_transmission_fee", "Fixed Transmission Fee", CONF_FIXED_TRANSMISSION_FEE, DEFAULT_FIXED_TRANSMISSION_FEE),
+        ("transitional_fee", "Transitional Fee", CONF_TRANSITIONAL_FEE, DEFAULT_TRANSITIONAL_FEE),
+        ("subscription_fee", "Subscription Fee", CONF_SUBSCRIPTION_FEE, DEFAULT_SUBSCRIPTION_FEE),
+        ("capacity_fee", "Capacity Fee", CONF_CAPACITY_FEE, DEFAULT_CAPACITY_FEE),
+        ("trade_fee", "Trade Fee", CONF_TRADE_FEE, DEFAULT_TRADE_FEE),
+    ]
+
+    for fee_id, fee_name, conf_key, def_val in fees:
+        entities.append(TGEFixedFeeSensor(entry, fee_id, fee_name, conf_key, def_val))
+
     async_add_entities(entities, True)
     async_track_time_interval(hass, coordinator.hourly_update_callback, timedelta(minutes=5))
 
     if coordinator.data:
         today_ok = coordinator.data.get("today") is not None
         tomorrow_ok = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN v1.8.2 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
+        _LOGGER.info(f"✅ TGE RDN v1.8.4 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
 
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
@@ -377,6 +399,27 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
 
 
 
+class TGEFixedFeeSensor(SensorEntity):
+    """Sensor for fixed monthly fees."""
+
+    def __init__(self, entry: ConfigEntry, fee_id: str, fee_name: str, config_key: str, default_val: float) -> None:
+        """Initialize fee sensor."""
+        self._entry = entry
+        self._fee_id = fee_id
+        self._config_key = config_key
+        self._default_val = default_val
+        self._attr_has_entity_name = True
+        self._attr_translation_key = fee_id
+        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{fee_id}"
+        self._attr_native_unit_of_measurement = "PLN"
+        self._attr_icon = "mdi:cash"
+
+    @property
+    def state(self) -> float:
+        """Return the fixed fee value from config."""
+        return self._entry.options.get(self._config_key, self._default_val)
+
+
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
     """TGE RDN sensor."""
 
@@ -386,7 +429,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._coord = coord
         self._entry = entry
         self._sensor_type = sensor_type
-        self._attr_name = f"{DEFAULT_NAME} {sensor_type.replace('_', ' ').title()}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = sensor_type
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{sensor_type}"
         self._last_hour = None
 
@@ -551,7 +595,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
 
         attrs = {
-            "version": "1.8.2",
+            "version": "1.8.4",
             "source": TGE_PAGE_URL,
             "dst_support": True,
             "price_source": "Fixing I",
