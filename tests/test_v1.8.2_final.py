@@ -92,7 +92,12 @@ print("\n" + "=" * 80)
 print("TEST 3: Integration Code Verification")
 print("=" * 80)
 
-sensor_file = "custom_components/tge_rdn/sensor.py"
+import os
+
+# Define path to sensor.py relative to this test file
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..'))
+sensor_file = os.path.join(project_root, "custom_components", "tge_rdn", "sensor.py")
 if os.path.exists(sensor_file):
     with open(sensor_file, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -126,24 +131,25 @@ print("TEST 4: Version Consistency Check")
 print("=" * 80)
 
 version_files = [
-    "custom_components/tge_rdn/sensor.py",
-    "custom_components/tge_rdn/__init__.py",
-    "custom_components/tge_rdn/manifest.json",
+    os.path.join(project_root, "custom_components", "tge_rdn", "sensor.py"),
+    os.path.join(project_root, "custom_components", "tge_rdn", "__init__.py"),
+    os.path.join(project_root, "custom_components", "tge_rdn", "manifest.json"),
 ]
 
 print("\n📦 Version in files:")
 all_versions_ok = True
 for file_path in version_files:
+    rel_path = os.path.relpath(file_path, project_root)
     if os.path.exists(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
             if '1.8.2' in content:
-                print(f"  ✅ {file_path}: v1.8.2")
+                print(f"  ✅ {rel_path}: v1.8.2")
             else:
-                print(f"  ❌ {file_path}: version not 1.8.2")
+                print(f"  ❌ {rel_path}: version not 1.8.2")
                 all_versions_ok = False
     else:
-        print(f"  ⚠️  {file_path}: not found")
+        print(f"  ⚠️  {rel_path}: not found")
 
 # Final summary
 print("\n" + "=" * 80)

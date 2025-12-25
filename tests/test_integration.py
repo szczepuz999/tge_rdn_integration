@@ -4,11 +4,11 @@ import os
 from datetime import datetime, timedelta
 
 # Add the custom_components to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'custom_components', 'tge_rdn'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the updated sensor module
-from sensor import TGERDNDataUpdateCoordinator
-from const import TGE_PAGE_URL
+from custom_components.tge_rdn.sensor import TGERDNDataUpdateCoordinator
+from custom_components.tge_rdn.const import TGE_PAGE_URL
 
 # Mock HomeAssistant objects
 class MockHass:

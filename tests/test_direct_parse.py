@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 # Add custom_components to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'custom_components', 'tge_rdn'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the actual parsing method
 import requests

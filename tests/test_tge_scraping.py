@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import json
+import os
 
 def analyze_tge_page():
     """Analyze the HTML structure of TGE page."""
@@ -74,9 +75,12 @@ def analyze_tge_page():
             print(f"✅ Found hour patterns: {set(hour_patterns)}")
         
         # Save a sample of the HTML
-        print(f"\n💾 Saving HTML sample to 'tge_page_sample.html'")
-        with open('tge_page_sample.html', 'w', encoding='utf-8') as f:
-            f.write(response.text[:50000])  # First 50KB
+    # Save to file
+    output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tge_page_sample.html')
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(response.text)
+    
+    print(f"✅ Saved to {output_file}")
         
         print("\n✅ Analysis complete!")
         
