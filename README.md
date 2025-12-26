@@ -2,7 +2,7 @@
 
 This project is a custom component for Home Assistant that integrates with the Polish energy exchange (TGE RDN) to provide real-time electricity prices. It scrapes the TGE website to fetch the data, calculates prices based on user-defined fees and distribution rates, and exposes them as sensors in Home Assistant.
 
-**Version:** 1.8.5
+**Version:** 1.8.6
 
 ## Features
 
