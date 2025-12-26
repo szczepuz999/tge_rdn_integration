@@ -3,6 +3,7 @@
     "step": {
       "user": {
         "title": "TGE RDN Configuration",
+        "description": "Configure TGE RDN energy price integration. Data source: Polish Power Exchange (Towarowa Giełda Energii).",
         "data": {
           "unit": "Price unit",
           "exchange_fee": "Exchange fee [PLN/MWh]",
@@ -15,6 +16,19 @@
           "subscription_fee": "Subscription fee [PLN/month]",
           "capacity_fee": "Capacity fee [PLN/month]",
           "trade_fee": "Trade fee [PLN/month]"
+        },
+        "data_description": {
+          "unit": "Select price display unit (PLN or EUR per MWh or kWh)",
+          "exchange_fee": "TGE exchange transaction fee",
+          "vat_rate": "VAT tax rate as decimal (e.g., 0.23 for 23%)",
+          "dist_low": "Distribution fee for off-peak hours",
+          "dist_med": "Distribution fee for morning peak hours",
+          "dist_high": "Distribution fee for evening peak hours",
+          "fixed_transmission_fee": "Fixed monthly transmission network fee",
+          "transitional_fee": "Monthly transitional fee",
+          "subscription_fee": "Monthly subscription/meter fee",
+          "capacity_fee": "Monthly capacity market fee",
+          "trade_fee": "Monthly trading/commercial fee"
         }
       }
     }
@@ -23,6 +37,7 @@
     "step": {
       "init": {
         "title": "TGE RDN Options",
+        "description": "Modify TGE RDN integration settings.",
         "data": {
           "unit": "Price unit",
           "exchange_fee": "Exchange fee",
@@ -42,28 +57,44 @@
   "entity": {
     "sensor": {
       "current_price": {
-        "name": "Current Price"
+        "state_attributes": {
+          "description": "Current electricity price for this hour from TGE RDN (Day-Ahead Market)"
+        }
       },
       "next_hour_price": {
-        "name": "Next Hour Price"
+        "state_attributes": {
+          "description": "Electricity price for the next hour from TGE RDN (Day-Ahead Market)"
+        }
       },
       "daily_average": {
-        "name": "Daily Average"
+        "state_attributes": {
+          "description": "Average daily electricity price from TGE RDN (Day-Ahead Market)"
+        }
       },
       "fixed_transmission_fee": {
-        "name": "Fixed Transmission Fee"
+        "state_attributes": {
+          "description": "Fixed monthly transmission network fee (opłata stała za przesył)"
+        }
       },
       "transitional_fee": {
-        "name": "Transitional Fee"
+        "state_attributes": {
+          "description": "Monthly transitional fee (opłata przejściowa)"
+        }
       },
       "subscription_fee": {
-        "name": "Subscription Fee"
+        "state_attributes": {
+          "description": "Monthly subscription/meter fee (opłata abonamentowa)"
+        }
       },
       "capacity_fee": {
-        "name": "Capacity Fee"
+        "state_attributes": {
+          "description": "Monthly capacity market fee (opłata mocowa)"
+        }
       },
       "trade_fee": {
-        "name": "Trade Fee"
+        "state_attributes": {
+          "description": "Monthly trading/commercial fee (opłata handlowa)"
+        }
       }
     }
   }

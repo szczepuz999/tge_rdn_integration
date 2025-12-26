@@ -3,6 +3,7 @@
     "step": {
       "user": {
         "title": "Konfiguracja TGE RDN",
+        "description": "Skonfiguruj integrację cen energii TGE RDN. Źródło danych: Towarowa Giełda Energii - Rynek Dnia Następnego.",
         "data": {
           "unit": "Jednostka ceny",
           "exchange_fee": "Opłata giełdowa [PLN/MWh]",
@@ -15,6 +16,19 @@
           "subscription_fee": "Opłata abonamentowa [PLN/mc]",
           "capacity_fee": "Opłata mocowa [PLN/mc]",
           "trade_fee": "Opłata handlowa [PLN/mc]"
+        },
+        "data_description": {
+          "unit": "Wybierz jednostkę wyświetlania ceny (PLN lub EUR za MWh lub kWh)",
+          "exchange_fee": "Opłata transakcyjna giełdy TGE",
+          "vat_rate": "Stawka podatku VAT jako ułamek dziesiętny (np. 0.23 dla 23%)",
+          "dist_low": "Opłata dystrybucyjna dla godzin pozaszczytowych",
+          "dist_med": "Opłata dystrybucyjna dla szczytu porannego",
+          "dist_high": "Opłata dystrybucyjna dla szczytu wieczornego",
+          "fixed_transmission_fee": "Miesięczna stała opłata za przesył sieciowy",
+          "transitional_fee": "Miesięczna opłata przejściowa",
+          "subscription_fee": "Miesięczna opłata abonamentowa/za licznik",
+          "capacity_fee": "Miesięczna opłata mocowa",
+          "trade_fee": "Miesięczna opłata handlowa"
         }
       }
     }
@@ -23,6 +37,7 @@
     "step": {
       "init": {
         "title": "Opcje TGE RDN",
+        "description": "Zmień ustawienia integracji TGE RDN.",
         "data": {
           "unit": "Jednostka ceny",
           "exchange_fee": "Opłata giełdowa",
@@ -42,28 +57,44 @@
   "entity": {
     "sensor": {
       "current_price": {
-        "name": "Aktualna cena"
+        "state_attributes": {
+          "description": "Aktualna cena energii elektrycznej z TGE RDN (Rynek Dnia Następnego)"
+        }
       },
       "next_hour_price": {
-        "name": "Cena w następnej godzinie"
+        "state_attributes": {
+          "description": "Cena energii elektrycznej w następnej godzinie z TGE RDN (Rynek Dnia Następnego)"
+        }
       },
       "daily_average": {
-        "name": "Średnia dzienna"
+        "state_attributes": {
+          "description": "Średnia dzienna cena energii elektrycznej z TGE RDN (Rynek Dnia Następnego)"
+        }
       },
       "fixed_transmission_fee": {
-        "name": "Stała opłata przesyłowa"
+        "state_attributes": {
+          "description": "Miesięczna stała opłata za przesył sieciowy (fixed transmission network fee)"
+        }
       },
       "transitional_fee": {
-        "name": "Opłata przejściowa"
+        "state_attributes": {
+          "description": "Miesięczna opłata przejściowa (transitional fee)"
+        }
       },
       "subscription_fee": {
-        "name": "Opłata abonamentowa"
+        "state_attributes": {
+          "description": "Miesięczna opłata abonamentowa (subscription/meter fee)"
+        }
       },
       "capacity_fee": {
-        "name": "Opłata mocowa"
+        "state_attributes": {
+          "description": "Miesięczna opłata mocowa (capacity market fee)"
+        }
       },
       "trade_fee": {
-        "name": "Opłata handlowa"
+        "state_attributes": {
+          "description": "Miesięczna opłata handlowa (trading/commercial fee)"
+        }
       }
     }
   }

@@ -399,6 +399,19 @@ class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
 
 
 
+# Polish entity names (fixed, not translated)
+ENTITY_NAMES_PL = {
+    "current_price": "Aktualna cena",
+    "next_hour_price": "Cena w następnej godzinie",
+    "daily_average": "Średnia dzienna",
+    "fixed_transmission_fee": "Stała opłata przesyłowa",
+    "transitional_fee": "Opłata przejściowa",
+    "subscription_fee": "Opłata abonamentowa",
+    "capacity_fee": "Opłata mocowa",
+    "trade_fee": "Opłata handlowa",
+}
+
+
 class TGEFixedFeeSensor(SensorEntity):
     """Sensor for fixed monthly fees."""
 
@@ -409,7 +422,8 @@ class TGEFixedFeeSensor(SensorEntity):
         self._config_key = config_key
         self._default_val = default_val
         self._attr_has_entity_name = True
-        self._attr_translation_key = fee_id
+        # Use fixed Polish name instead of translation key
+        self._attr_name = ENTITY_NAMES_PL.get(fee_id, fee_name)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{fee_id}"
         self._attr_native_unit_of_measurement = "PLN"
         self._attr_icon = "mdi:cash"
@@ -430,7 +444,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         self._entry = entry
         self._sensor_type = sensor_type
         self._attr_has_entity_name = True
-        self._attr_translation_key = sensor_type
+        # Use fixed Polish name instead of translation key
+        self._attr_name = ENTITY_NAMES_PL.get(sensor_type, sensor_type)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{sensor_type}"
         self._last_hour = None
 
