@@ -13,6 +13,11 @@ UNIT_EUR_KWH = "EUR/kWh"
 CONF_UNIT = "unit"
 DEFAULT_UNIT = UNIT_PLN_KWH
 
+CONF_DEALER = "dealer"
+CONF_DISTRIBUTOR = "distributor"
+CONF_DEALER_TARIFF = "dealer_tariff"
+CONF_DIST_TARIFF = "dist_tariff"
+
 CONF_EXCHANGE_FEE = "exchange_fee"
 CONF_VAT_RATE = "vat_rate"
 CONF_DIST_LOW = "dist_low"

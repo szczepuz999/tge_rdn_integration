@@ -2,33 +2,21 @@
   "config": {
     "step": {
       "user": {
-        "title": "TGE RDN Configuration",
-        "description": "Configure TGE RDN energy price integration. Data source: Polish Power Exchange (Towarowa Giełda Energii).",
+        "title": "TGE RDN Configuration - Step 1",
+        "description": "Select your electricity seller and distributor.",
         "data": {
+          "dealer": "Electricity Seller",
+          "distributor": "Distributor (OSD)",
           "unit": "Price unit",
-          "exchange_fee": "Exchange fee [PLN/MWh]",
-          "vat_rate": "VAT rate (0.23 = 23%)",
-          "dist_low": "Distribution off-peak [PLN/MWh]",
-          "dist_med": "Distribution morning [PLN/MWh]",
-          "dist_high": "Distribution evening [PLN/MWh]",
-          "fixed_transmission_fee": "Fixed transmission fee [PLN/month]",
-          "transitional_fee": "Transitional fee [PLN/month]",
-          "subscription_fee": "Subscription fee [PLN/month]",
-          "capacity_fee": "Capacity fee [PLN/month]",
-          "trade_fee": "Trade fee [PLN/month]"
-        },
-        "data_description": {
-          "unit": "Select price display unit (PLN or EUR per MWh or kWh)",
-          "exchange_fee": "TGE exchange transaction fee",
-          "vat_rate": "VAT tax rate as decimal (e.g., 0.23 for 23%)",
-          "dist_low": "Distribution fee for off-peak hours",
-          "dist_med": "Distribution fee for morning peak hours",
-          "dist_high": "Distribution fee for evening peak hours",
-          "fixed_transmission_fee": "Fixed monthly transmission network fee",
-          "transitional_fee": "Monthly transitional fee",
-          "subscription_fee": "Monthly subscription/meter fee",
-          "capacity_fee": "Monthly capacity market fee",
-          "trade_fee": "Monthly trading/commercial fee"
+          "vat_rate": "VAT rate (0.23 = 23%)"
+        }
+      },
+      "tariffs": {
+        "title": "TGE RDN Configuration - Step 2",
+        "description": "Select the tariff for your dealer and distributor.",
+        "data": {
+          "dealer_tariff": "Dealer Tariff",
+          "dist_tariff": "Distribution Tariff"
         }
       }
     }
@@ -36,20 +24,21 @@
   "options": {
     "step": {
       "init": {
-        "title": "TGE RDN Options",
-        "description": "Modify TGE RDN integration settings.",
+        "title": "TGE RDN Options - Step 1",
+        "description": "Select your electricity seller and distributor.",
         "data": {
+          "dealer": "Electricity Seller",
+          "distributor": "Distributor (OSD)",
           "unit": "Price unit",
-          "exchange_fee": "Exchange fee",
-          "vat_rate": "VAT rate",
-          "dist_low": "Distribution off-peak",
-          "dist_med": "Distribution morning",
-          "dist_high": "Distribution evening",
-          "fixed_transmission_fee": "Fixed transmission fee",
-          "transitional_fee": "Transitional fee",
-          "subscription_fee": "Subscription fee",
-          "capacity_fee": "Capacity fee",
-          "trade_fee": "Trade fee"
+          "vat_rate": "VAT rate (0.23 = 23%)"
+        }
+      },
+      "tariffs": {
+        "title": "TGE RDN Options - Step 2",
+        "description": "Select tariffs for your seller and distributor.",
+        "data": {
+          "dealer_tariff": "Seller Tariff",
+          "dist_tariff": "Distribution Tariff"
         }
       }
     }

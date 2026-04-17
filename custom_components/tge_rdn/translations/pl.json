@@ -2,33 +2,21 @@
   "config": {
     "step": {
       "user": {
-        "title": "Konfiguracja TGE RDN",
-        "description": "Skonfiguruj integrację cen energii TGE RDN. Źródło danych: Towarowa Giełda Energii - Rynek Dnia Następnego.",
+        "title": "Konfiguracja TGE RDN - Krok 1",
+        "description": "Wybierz swojego sprzedawcę i dystrybutora energii.",
         "data": {
+          "dealer": "Sprzedawca energii",
+          "distributor": "Dystrybutor (OSD)",
           "unit": "Jednostka ceny",
-          "exchange_fee": "Opłata giełdowa [PLN/MWh]",
-          "vat_rate": "VAT (0.23 = 23%)",
-          "dist_low": "Dystrybucja pozostałe [PLN/MWh]",
-          "dist_med": "Dystrybucja szczyt rano [PLN/MWh]",
-          "dist_high": "Dystrybucja szczyt wieczór [PLN/MWh]",
-          "fixed_transmission_fee": "Stała opłata przesyłowa [PLN/mc]",
-          "transitional_fee": "Opłata przejściowa [PLN/mc]",
-          "subscription_fee": "Opłata abonamentowa [PLN/mc]",
-          "capacity_fee": "Opłata mocowa [PLN/mc]",
-          "trade_fee": "Opłata handlowa [PLN/mc]"
-        },
-        "data_description": {
-          "unit": "Wybierz jednostkę wyświetlania ceny (PLN lub EUR za MWh lub kWh)",
-          "exchange_fee": "Opłata transakcyjna giełdy TGE",
-          "vat_rate": "Stawka podatku VAT jako ułamek dziesiętny (np. 0.23 dla 23%)",
-          "dist_low": "Opłata dystrybucyjna dla godzin pozaszczytowych",
-          "dist_med": "Opłata dystrybucyjna dla szczytu porannego",
-          "dist_high": "Opłata dystrybucyjna dla szczytu wieczornego",
-          "fixed_transmission_fee": "Miesięczna stała opłata za przesył sieciowy",
-          "transitional_fee": "Miesięczna opłata przejściowa",
-          "subscription_fee": "Miesięczna opłata abonamentowa/za licznik",
-          "capacity_fee": "Miesięczna opłata mocowa",
-          "trade_fee": "Miesięczna opłata handlowa"
+          "vat_rate": "VAT (0.23 = 23%)"
+        }
+      },
+      "tariffs": {
+        "title": "Konfiguracja TGE RDN - Krok 2",
+        "description": "Wybierz taryfę u swojego sprzedawcy i dystrybutora.",
+        "data": {
+          "dealer_tariff": "Taryfa sprzedawcy",
+          "dist_tariff": "Taryfa dystrybucyjna"
         }
       }
     }
@@ -36,20 +24,21 @@
   "options": {
     "step": {
       "init": {
-        "title": "Opcje TGE RDN",
-        "description": "Zmień ustawienia integracji TGE RDN.",
+        "title": "Opcje TGE RDN - Krok 1",
+        "description": "Wybierz swojego sprzedawcę i dystrybutora energii.",
         "data": {
+          "dealer": "Sprzedawca energii",
+          "distributor": "Dystrybutor (OSD)",
           "unit": "Jednostka ceny",
-          "exchange_fee": "Opłata giełdowa",
-          "vat_rate": "VAT",
-          "dist_low": "Dystrybucja pozostałe",
-          "dist_med": "Dystrybucja szczyt rano",
-          "dist_high": "Dystrybucja szczyt wieczór",
-          "fixed_transmission_fee": "Stała opłata przesyłowa",
-          "transitional_fee": "Opłata przejściowa",
-          "subscription_fee": "Opłata abonamentowa",
-          "capacity_fee": "Opłata mocowa",
-          "trade_fee": "Opłata handlowa"
+          "vat_rate": "VAT (0.23 = 23%)"
+        }
+      },
+      "tariffs": {
+        "title": "Opcje TGE RDN - Krok 2",
+        "description": "Wybierz taryfę u swojego sprzedawcy i dystrybutora.",
+        "data": {
+          "dealer_tariff": "Taryfa sprzedawcy",
+          "dist_tariff": "Taryfa dystrybucyjna"
         }
       }
     }

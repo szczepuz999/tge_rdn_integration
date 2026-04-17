@@ -15,7 +15,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up from config entry."""
-    _LOGGER.info("🚀 TGE RDN Integration v1.8.6 starting...")
+    _LOGGER.info("🚀 TGE RDN Integration v2.1.0 starting...")
     _LOGGER.info("✅ TGE Web Table Parsing + DST support")
 
     hass.data.setdefault(DOMAIN, {})
@@ -23,7 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    _LOGGER.info("✅ TGE RDN v1.8.6 ready!")
+    _LOGGER.info("✅ TGE RDN v2.1.0 ready!")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

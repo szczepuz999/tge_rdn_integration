@@ -1,0 +1,17 @@
+{
+  "title": "Opcje TGE RDN",
+  "unit_options": [
+    "PLN/MWh"
+  ],
+  "values": {
+    "oplata_gieldowa": 109.7,
+    "vat": 0.23,
+    "dystrybucja_pozostale": 90,
+    "dystrybucja_szczyt_rano": 282.6,
+    "dystrybucja_szczyt_wieczor": 458,
+    "stala_oplata_przesylowa": 12.72,
+    "oplata_przejsciowa": 0.41,
+    "oplata_abonamentowa": 5.61,
+    "oplata_mocowa": 19.69
+  }
+}
