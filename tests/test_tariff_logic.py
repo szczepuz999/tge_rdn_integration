@@ -32,7 +32,7 @@ sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = Mock
 # Add the custom_components to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from custom_components.tge_rdn.sensor import TGERDNSensor, load_tariffs
+from custom_components.tge_rdn.sensor import TGEFixedFeeSensor, TGERDNSensor, load_tariffs
 from custom_components.tge_rdn.const import *
 
 class MockCoordinator:
@@ -197,9 +197,9 @@ class TestTariffLogic(unittest.TestCase):
         dt = datetime(2025, 6, 15, 14, 0)  # Sunday afternoon
         # Negative TGE price: -50 PLN/MWh
         # base = -50 (not clamped), dist = 120.0, exchange_fee = 80.0, vat = 0.23
-        # total = -50 * 1.23 + 80.0 + 120.0 = -61.5 + 80.0 + 120.0 = 138.5
+        # total = (-50.0 + 80.0 + 120.0) * 1.23 = 150.0 * 1.23 = 184.5
         result = sensor._compute_total(-50.0, dt)
-        self.assertAlmostEqual(result, 138.5, places=2)
+        self.assertAlmostEqual(result, 184.5, places=2)
 
     def test_tauron_negative_prices_clamped(self):
         """Test that Tauron Dynamic clamps negative TGE prices to 0."""
@@ -209,6 +209,7 @@ class TestTariffLogic(unittest.TestCase):
             CONF_DISTRIBUTOR: "PGE Dystrybucja",
             CONF_DIST_TARIFF: "G11",
             CONF_VAT_RATE: 0.23,
+            CONF_EXCHANGE_FEE: 89.2,
         }
         entry = MockEntry(options)
         sensor = TGERDNSensor(self.coord, entry, "current_price")
@@ -218,10 +219,10 @@ class TestTariffLogic(unittest.TestCase):
 
         dt = datetime(2025, 6, 15, 14, 0)
         # Negative TGE price: -50 PLN/MWh
-        # base = max(0, -50) = 0, dist = 120.0, exchange_fee = 2.0, vat = 0.23
-        # total = 0 * 1.23 + 2.0 + 120.0 = 122.0
+        # base = max(0, -50) = 0, dist = 120.0, exchange_fee = 89.2, vat = 0.23
+        # total = (0.0 + 89.2 + 120.0) * 1.23 = 257.316
         result = sensor._compute_total(-50.0, dt)
-        self.assertAlmostEqual(result, 122.0, places=2)
+        self.assertAlmostEqual(result, 257.316, places=3)
 
     def test_pstryk_positive_prices(self):
         """Test that Pstryk works normally with positive TGE prices."""
@@ -239,9 +240,27 @@ class TestTariffLogic(unittest.TestCase):
         dt = datetime(2025, 6, 15, 14, 0)
         # Positive TGE price: 300 PLN/MWh
         # base = 300, dist = 120.0, exchange_fee = 80.0, vat = 0.23
-        # total = 300 * 1.23 + 80.0 + 120.0 = 369.0 + 80.0 + 120.0 = 569.0
+        # total = (300.0 + 80.0 + 120.0) * 1.23 = 500.0 * 1.23 = 615.0
         result = sensor._compute_total(300.0, dt)
-        self.assertAlmostEqual(result, 569.0, places=2)
+        self.assertAlmostEqual(result, 615.0, places=2)
+
+    def test_non_dynamic_prices_apply_vat_to_distribution_too(self):
+        """Test that fixed seller price and distribution rates are both treated as netto."""
+        options = {
+            CONF_DEALER: "Tauron Sprzedaż",
+            CONF_DEALER_TARIFF: "G13",
+            CONF_DISTRIBUTOR: "Tauron Dystrybucja",
+            CONF_DIST_TARIFF: "G13",
+            CONF_VAT_RATE: 0.23,
+        }
+        entry = MockEntry(options)
+        sensor = TGERDNSensor(self.coord, entry, "current_price")
+
+        dt = datetime(2025, 7, 2, 10, 0)  # Workday, summer, mid_peak
+        # seller = 471.79, dist = 263.82, both netto
+        # total = (471.79 + 263.82) * 1.23 = 904.8003
+        result = sensor._compute_total(0.0, dt)
+        self.assertAlmostEqual(result, 904.8003, places=4)
 
     def test_negative_prices_allowed_attribute_in_tariffs(self):
         """Test that negative_prices_allowed is present in tariffs.json for all sellers."""
@@ -256,6 +275,44 @@ class TestTariffLogic(unittest.TestCase):
         self.assertTrue(seller_map["Pstryk"])
         self.assertFalse(seller_map["Tauron Sprzedaż"])
         self.assertFalse(seller_map["PGE Obrót"])
+
+    def test_fixed_distribution_fee_sensor_applies_vat(self):
+        """Test that distributor monthly fixed fees are read as netto and exposed as gross."""
+        options = {
+            CONF_DISTRIBUTOR: "Tauron Dystrybucja",
+            CONF_DIST_TARIFF: "G13",
+            CONF_VAT_RATE: 0.23,
+        }
+        entry = MockEntry(options)
+        sensor = TGEFixedFeeSensor(
+            entry,
+            "fixed_transmission_fee",
+            "Fixed Transmission Fee",
+            CONF_FIXED_TRANSMISSION_FEE,
+            DEFAULT_FIXED_TRANSMISSION_FEE,
+        )
+
+        # tariffs.json: Tauron Dystrybucja G13 fixed_transmission_fee = 10.86 netto
+        self.assertAlmostEqual(sensor.state, 13.3578, places=4)
+
+    def test_trade_fee_sensor_applies_vat(self):
+        """Test that seller monthly trade fee is read as netto and exposed as gross."""
+        options = {
+            CONF_DEALER: "PGE Obrót",
+            CONF_DEALER_TARIFF: "Dynamic",
+            CONF_VAT_RATE: 0.23,
+        }
+        entry = MockEntry(options)
+        sensor = TGEFixedFeeSensor(
+            entry,
+            "trade_fee",
+            "Trade Fee",
+            CONF_TRADE_FEE,
+            DEFAULT_TRADE_FEE,
+        )
+
+        # tariffs.json: PGE Dynamic trade_fee = 5.0 netto
+        self.assertAlmostEqual(sensor.state, 6.15, places=2)
 
 if __name__ == '__main__':
     unittest.main()

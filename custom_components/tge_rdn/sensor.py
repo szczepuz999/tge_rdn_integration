@@ -546,7 +546,8 @@ class TGEFixedFeeSensor(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{fee_id}"
         self._attr_native_unit_of_measurement = "PLN"
         self._attr_icon = "mdi:cash"
-        self._cached_value = self._load_fee(entry.options, tariffs_data)
+        self._vat = entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
+        self._cached_value_netto = self._load_fee(entry.options, tariffs_data)
 
     def _load_fee(self, opts, tariffs_data: dict = None) -> float:
         """Load fee value from tariffs data, fall back to options or default."""
@@ -582,8 +583,8 @@ class TGEFixedFeeSensor(SensorEntity):
 
     @property
     def state(self) -> float:
-        """Return cached fee value."""
-        return self._cached_value
+        """Return cached fee value gross (VAT applied to netto tariffs data)."""
+        return self._cached_value_netto * (1 + self._vat)
 
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
@@ -693,7 +694,8 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
             base = seller_price
         else:
             base = tge_price if self._negative_prices_allowed else max(0, tge_price)
-        return base * (1 + self._vat) + self._fee + dist_rate
+        subtotal_netto = base + self._fee + dist_rate
+        return subtotal_netto * (1 + self._vat)
 
     def _apply_unit(self, mwh: float) -> float:
         if self._unit == UNIT_PLN_KWH: return mwh / 1000
