@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform v1.8.1 - Web Table Parsing with Date Fix."""
+"""TGE RDN sensor platform v2.1.1 - Web Table Parsing with Date Fix."""
 import logging
 import asyncio
 import re
@@ -199,7 +199,7 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing libraries: {IMPORT_ERROR}")
         raise Exception(f"Missing libraries: {IMPORT_ERROR}")
 
-    _LOGGER.info("🚀 TGE RDN v2.1.0 - Starting integration...")
+    _LOGGER.info("🚀 TGE RDN v2.1.1 - Starting integration...")
     _LOGGER.info("📄 Source: https://tge.pl/energia-elektryczna-rdn")
     _LOGGER.info("✅ Web Table Parsing + DST Support Enabled")
     _LOGGER.info("💰 Price Source: Fixing I (primary)")
@@ -233,7 +233,7 @@ async def async_setup_entry(
     if coordinator.data:
         today_ok = coordinator.data.get("today") is not None
         tomorrow_ok = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN v2.1.0 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
+        _LOGGER.info(f"✅ TGE RDN v2.1.1 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
 
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
@@ -546,24 +546,18 @@ class TGEFixedFeeSensor(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_{fee_id}"
         self._attr_native_unit_of_measurement = "PLN"
         self._attr_icon = "mdi:cash"
-        self._vat = entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
-        self._cached_value_netto = self._load_fee(entry.options, tariffs_data)
+        self._tariffs_data = tariffs_data if tariffs_data is not None else load_tariffs()
 
-    def _load_fee(self, opts, tariffs_data: dict = None) -> float:
-        """Load fee value from tariffs data, fall back to options or default."""
-        # User override takes priority (for dynamic tariffs)
-        if self._config_key in opts:
-            return opts[self._config_key]
-
-        if tariffs_data is None:
-            tariffs_data = load_tariffs()
+    def _load_fee(self) -> float:
+        """Load fee value from tariffs data based on selected distributor/seller."""
+        opts = self._entry.options
 
         # trade_fee comes from seller tariff
         if self._fee_id == "trade_fee":
             dealer = opts.get(CONF_DEALER)
             dealer_tariff = opts.get(CONF_DEALER_TARIFF)
             if dealer and dealer_tariff:
-                for s in tariffs_data.get("sellers", []):
+                for s in self._tariffs_data.get("sellers", []):
                     if s["name"] == dealer:
                         for t in s.get("tariffs", []):
                             if t["name"] == dealer_tariff:
@@ -574,7 +568,7 @@ class TGEFixedFeeSensor(SensorEntity):
         dist = opts.get(CONF_DISTRIBUTOR)
         dist_tariff = opts.get(CONF_DIST_TARIFF)
         if dist and dist_tariff:
-            for d in tariffs_data.get("distributors", []):
+            for d in self._tariffs_data.get("distributors", []):
                 if d["name"] == dist:
                     for t in d.get("tariffs", []):
                         if t["name"] == dist_tariff:
@@ -582,9 +576,10 @@ class TGEFixedFeeSensor(SensorEntity):
         return self._default_val
 
     @property
-    def state(self) -> float:
-        """Return cached fee value gross (VAT applied to netto tariffs data)."""
-        return self._cached_value_netto * (1 + self._vat)
+    def native_value(self) -> float:
+        """Return fee value gross (VAT applied to netto tariffs data)."""
+        vat = self._entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
+        return round(self._load_fee() * (1 + vat), 2)
 
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
@@ -775,7 +770,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
 
         attrs = {
-            "version": "2.1.0",
+            "version": "2.1.1",
             "source": TGE_PAGE_URL,
             "dst_support": True,
             "price_source": "Fixing I",
