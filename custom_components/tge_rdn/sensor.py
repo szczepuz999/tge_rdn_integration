@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform v2.1.1 - Web Table Parsing with Date Fix."""
+"""TGE RDN sensor platform v2.1.2 - Web Table Parsing with Date Fix."""
 import logging
 import asyncio
 import re
@@ -199,7 +199,7 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing libraries: {IMPORT_ERROR}")
         raise Exception(f"Missing libraries: {IMPORT_ERROR}")
 
-    _LOGGER.info("🚀 TGE RDN v2.1.1 - Starting integration...")
+    _LOGGER.info("🚀 TGE RDN v2.1.2 - Starting integration...")
     _LOGGER.info("📄 Source: https://tge.pl/energia-elektryczna-rdn")
     _LOGGER.info("✅ Web Table Parsing + DST Support Enabled")
     _LOGGER.info("💰 Price Source: Fixing I (primary)")
@@ -233,7 +233,7 @@ async def async_setup_entry(
     if coordinator.data:
         today_ok = coordinator.data.get("today") is not None
         tomorrow_ok = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN v2.1.1 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
+        _LOGGER.info(f"✅ TGE RDN v2.1.2 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
 
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
@@ -766,11 +766,10 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         """Return attributes."""
         if not REQUIRED_LIBRARIES_AVAILABLE or not self.coordinator.data:
             return {}
-
         data = self.coordinator.data
 
         attrs = {
-            "version": "2.1.1",
+            "version": "2.1.2",
             "source": TGE_PAGE_URL,
             "dst_support": True,
             "price_source": "Fixing I",

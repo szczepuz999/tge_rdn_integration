@@ -85,6 +85,13 @@
           "description": "Miesięczna opłata handlowa (trading/commercial fee)"
         }
       }
+    },
+    "binary_sensor": {
+      "is_dynamic_tariff": {
+        "state_attributes": {
+          "description": "Wskazuje czy wybrana taryfa sprzedawcy jest dynamiczna (cena z TGE RDN)"
+        }
+      }
     }
   }
 }

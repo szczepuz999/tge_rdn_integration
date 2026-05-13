@@ -29,6 +29,9 @@ CONF_SUBSCRIPTION_FEE = "subscription_fee"
 CONF_CAPACITY_FEE = "capacity_fee"
 CONF_TRADE_FEE = "trade_fee"
 
+# Binary sensor
+SENSOR_IS_DYNAMIC = "is_dynamic_tariff"
+
 DEFAULT_EXCHANGE_FEE = 2.0
 DEFAULT_VAT_RATE = 0.23
 DEFAULT_DIST_LOW = 80.0
