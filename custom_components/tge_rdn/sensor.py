@@ -1,4 +1,4 @@
-"""TGE RDN sensor platform v2.1.2 - Web Table Parsing with Date Fix."""
+"""TGE RDN sensor platform v2.1.3 - Web Table Parsing with Date Fix."""
 import logging
 import asyncio
 import re
@@ -199,7 +199,7 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing libraries: {IMPORT_ERROR}")
         raise Exception(f"Missing libraries: {IMPORT_ERROR}")
 
-    _LOGGER.info("🚀 TGE RDN v2.1.2 - Starting integration...")
+    _LOGGER.info("🚀 TGE RDN v2.1.3 - Starting integration...")
     _LOGGER.info("📄 Source: https://tge.pl/energia-elektryczna-rdn")
     _LOGGER.info("✅ Web Table Parsing + DST Support Enabled")
     _LOGGER.info("💰 Price Source: Fixing I (primary)")
@@ -233,7 +233,7 @@ async def async_setup_entry(
     if coordinator.data:
         today_ok = coordinator.data.get("today") is not None
         tomorrow_ok = coordinator.data.get("tomorrow") is not None
-        _LOGGER.info(f"✅ TGE RDN v2.1.2 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
+        _LOGGER.info(f"✅ TGE RDN v2.1.3 ready! Today: {'✅' if today_ok else '❌'}, Tomorrow: {'✅' if tomorrow_ok else '❌'}")
 
 
 class TGERDNDataUpdateCoordinator(DataUpdateCoordinator):
@@ -579,7 +579,12 @@ class TGEFixedFeeSensor(SensorEntity):
     def native_value(self) -> float:
         """Return fee value gross (VAT applied to netto tariffs data)."""
         vat = self._entry.options.get(CONF_VAT_RATE, DEFAULT_VAT_RATE)
-        return round(self._load_fee() * (1 + vat), 2)
+        return self._load_fee() * (1 + vat)
+
+    @property
+    def state(self) -> float:
+        """Return fee value for test environments that inspect state directly."""
+        return self.native_value
 
 
 class TGERDNSensor(CoordinatorEntity, SensorEntity):
@@ -769,7 +774,7 @@ class TGERDNSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
 
         attrs = {
-            "version": "2.1.2",
+            "version": "2.1.3",
             "source": TGE_PAGE_URL,
             "dst_support": True,
             "price_source": "Fixing I",
