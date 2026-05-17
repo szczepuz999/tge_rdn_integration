@@ -4,9 +4,9 @@
       "name": "PGE Obrót",
       "negative_prices_allowed": false,
       "tariffs": [
-        { "name": "G11", "is_dynamic": false },
-        { "name": "G12", "is_dynamic": false },
-        { "name": "G12w", "is_dynamic": false },
+        { "name": "G11", "is_dynamic": false, "energy_prices_netto_mwh": { "all": 504.07 } },
+        { "name": "G12", "is_dynamic": false, "energy_prices_netto_mwh": { "high": 569.11, "low": 373.98 } },
+        { "name": "G12w", "is_dynamic": false, "energy_prices_netto_mwh": { "high": 585.37, "low": 430.89 } },
         { "name": "Dynamic", "exchange_fee": 2.0, "trade_fee": 5.0, "is_dynamic": true }
       ]
     },
@@ -68,22 +68,22 @@
           "name": "G11",
           "zones": {
             "all": {
-              "rate": 120.0,
+              "rate": 349.59,
               "schedule": [{ "default": true }]
             }
           },
           "fixed_fees": {
-            "fixed_transmission_fee": 12.3,
+            "fixed_transmission_fee": 10.0,
             "transitional_fee": 0.0,
-            "subscription_fee": 5.5,
-            "capacity_fee": 21.13
+            "subscription_fee": 4.47,
+            "capacity_fee": 24.07
           }
         },
         {
           "name": "G12",
           "zones": {
             "low": {
-              "rate": 90.0,
+              "rate": 73.17,
               "schedule": [
                 { "hours": [22,23,0,1,2,3,4,5], "days": "all", "season": "all" },
                 { "hours": [13,14], "days": "workdays", "season": "winter" },
@@ -91,22 +91,22 @@
               ]
             },
             "high": {
-              "rate": 490.0,
+              "rate": 398.37,
               "schedule": [{ "default": true }]
             }
           },
           "fixed_fees": {
-            "fixed_transmission_fee": 12.3,
+            "fixed_transmission_fee": 14.39,
             "transitional_fee": 0.0,
-            "subscription_fee": 5.5,
-            "capacity_fee": 21.13
+            "subscription_fee": 4.47,
+            "capacity_fee": 24.07
           }
         },
         {
           "name": "G12w",
           "zones": {
             "low": {
-              "rate": 90.0,
+              "rate": 81.3,
               "schedule": [
                 { "hours": [22,23,0,1,2,3,4,5], "days": "all", "season": "all" },
                 { "hours": [13,14], "days": "workdays", "season": "winter" },
@@ -116,15 +116,15 @@
               ]
             },
             "high": {
-              "rate": 490.0,
+              "rate": 430.89,
               "schedule": [{ "default": true }]
             }
           },
           "fixed_fees": {
-            "fixed_transmission_fee": 12.3,
+            "fixed_transmission_fee": 14.96,
             "transitional_fee": 0.0,
-            "subscription_fee": 5.5,
-            "capacity_fee": 21.13
+            "subscription_fee": 4.47,
+            "capacity_fee": 24.07
           }
         }
       ]

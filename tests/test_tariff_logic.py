@@ -67,15 +67,15 @@ class TestTariffLogic(unittest.TestCase):
         entry = MockEntry(options)
         sensor = TGERDNSensor(self.coord, entry, "current_price")
 
-        # PGE G11 "all" zone rate = 120.0
+        # PGE G11 "all" zone rate = 349.59 netto PLN/MWh
         dt = datetime(2025, 1, 1, 10, 0)  # Wednesday morning
-        self.assertEqual(sensor._get_dist(dt), 120.0)
+        self.assertEqual(sensor._get_dist(dt), 349.59)
 
         dt = datetime(2025, 1, 1, 20, 0)  # Wednesday evening
-        self.assertEqual(sensor._get_dist(dt), 120.0)
+        self.assertEqual(sensor._get_dist(dt), 349.59)
 
     def test_dual_standard_g12(self):
-        """Test PGE G12 — dual zones from JSON (low=90, high=490)."""
+        """Test PGE G12 — dual zones from JSON (low=73.17, high=398.37)."""
         options = {
             CONF_DISTRIBUTOR: "PGE Dystrybucja",
             CONF_DIST_TARIFF: "G12",
@@ -84,18 +84,18 @@ class TestTariffLogic(unittest.TestCase):
         sensor = TGERDNSensor(self.coord, entry, "current_price")
 
         # Low: 22-05 all days
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 1, 23, 0)), 90.0)
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 1, 3, 0)), 90.0)
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 1, 23, 0)), 73.17)
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 1, 3, 0)), 73.17)
 
         # Low: 13-14 workday winter
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 14, 0)), 90.0)  # Thursday
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 14, 0)), 73.17)  # Thursday
 
         # High: otherwise
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 10, 0)), 490.0)
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 18, 0)), 490.0)
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 10, 0)), 398.37)
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 18, 0)), 398.37)
 
     def test_dual_weekend_g12w(self):
-        """Test PGE G12w — dual zones with weekend/holiday override (low=90, high=490)."""
+        """Test PGE G12w — dual zones with weekend/holiday override (low=81.3, high=430.89)."""
         options = {
             CONF_DISTRIBUTOR: "PGE Dystrybucja",
             CONF_DIST_TARIFF: "G12w",
@@ -104,16 +104,37 @@ class TestTariffLogic(unittest.TestCase):
         sensor = TGERDNSensor(self.coord, entry, "current_price")
 
         # Weekend (Saturday 2025-01-04) - Should be low
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 4, 12, 0)), 90.0)
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 4, 12, 0)), 81.3)
 
         # Holiday (Jan 1st) - Should be low
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 1, 12, 0)), 90.0)
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 1, 12, 0)), 81.3)
 
         # Weekday peak - high
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 10, 0)), 490.0)  # Thursday 10am
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 10, 0)), 430.89)  # Thursday 10am
 
         # Weekday off-peak winter 13-14 - low
-        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 14, 0)), 90.0)  # Thursday 2pm
+        self.assertEqual(sensor._get_dist(datetime(2025, 1, 2, 14, 0)), 81.3)  # Thursday 2pm
+
+    def test_pge_static_seller_prices_are_loaded_as_netto(self):
+        """Test that PGE fixed seller tariffs expose netto seller prices from tariffs.json."""
+        options = {
+            CONF_DEALER: "PGE Obrót",
+            CONF_DEALER_TARIFF: "G12",
+            CONF_DISTRIBUTOR: "PGE Dystrybucja",
+            CONF_DIST_TARIFF: "G12",
+        }
+        entry = MockEntry(options)
+        sensor = TGERDNSensor(self.coord, entry, "current_price")
+
+        zone_name, dist_rate, seller_price = sensor._resolve(datetime(2025, 1, 2, 14, 0))
+        self.assertEqual(zone_name, "low")
+        self.assertEqual(dist_rate, 73.17)
+        self.assertEqual(seller_price, 373.98)
+
+        zone_name, dist_rate, seller_price = sensor._resolve(datetime(2025, 1, 2, 10, 0))
+        self.assertEqual(zone_name, "high")
+        self.assertEqual(dist_rate, 398.37)
+        self.assertEqual(seller_price, 569.11)
 
     def test_triple_tauron_g13(self):
         """Test Tauron G13 — three zones from JSON (mid_peak=263.82, peak=433.33, off_peak=82.70)."""
@@ -196,10 +217,10 @@ class TestTariffLogic(unittest.TestCase):
 
         dt = datetime(2025, 6, 15, 14, 0)  # Sunday afternoon
         # Negative TGE price: -50 PLN/MWh
-        # base = -50 (not clamped), dist = 120.0, exchange_fee = 80.0, vat = 0.23
-        # total = (-50.0 + 80.0 + 120.0) * 1.23 = 150.0 * 1.23 = 184.5
+        # base = -50 (not clamped), dist = 349.59, exchange_fee = 80.0, vat = 0.23
+        # total = (-50.0 + 80.0 + 349.59) * 1.23 = 379.59 * 1.23 = 466.8957
         result = sensor._compute_total(-50.0, dt)
-        self.assertAlmostEqual(result, 184.5, places=2)
+        self.assertAlmostEqual(result, 466.8957, places=4)
 
     def test_tauron_negative_prices_clamped(self):
         """Test that Tauron Dynamic clamps negative TGE prices to 0."""
@@ -219,10 +240,10 @@ class TestTariffLogic(unittest.TestCase):
 
         dt = datetime(2025, 6, 15, 14, 0)
         # Negative TGE price: -50 PLN/MWh
-        # base = max(0, -50) = 0, dist = 120.0, exchange_fee = 89.2, vat = 0.23
-        # total = (0.0 + 89.2 + 120.0) * 1.23 = 257.316
+        # base = max(0, -50) = 0, dist = 349.59, exchange_fee = 89.2, vat = 0.23
+        # total = (0.0 + 89.2 + 349.59) * 1.23 = 539.7117
         result = sensor._compute_total(-50.0, dt)
-        self.assertAlmostEqual(result, 257.316, places=3)
+        self.assertAlmostEqual(result, 539.7117, places=4)
 
     def test_pstryk_positive_prices(self):
         """Test that Pstryk works normally with positive TGE prices."""
@@ -239,10 +260,10 @@ class TestTariffLogic(unittest.TestCase):
 
         dt = datetime(2025, 6, 15, 14, 0)
         # Positive TGE price: 300 PLN/MWh
-        # base = 300, dist = 120.0, exchange_fee = 80.0, vat = 0.23
-        # total = (300.0 + 80.0 + 120.0) * 1.23 = 500.0 * 1.23 = 615.0
+        # base = 300, dist = 349.59, exchange_fee = 80.0, vat = 0.23
+        # total = (300.0 + 80.0 + 349.59) * 1.23 = 729.59 * 1.23 = 897.3957
         result = sensor._compute_total(300.0, dt)
-        self.assertAlmostEqual(result, 615.0, places=2)
+        self.assertAlmostEqual(result, 897.3957, places=4)
 
     def test_non_dynamic_prices_apply_vat_to_distribution_too(self):
         """Test that fixed seller price and distribution rates are both treated as netto."""
